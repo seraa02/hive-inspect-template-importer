@@ -150,7 +150,7 @@ vercel
 3. Run `npm run seed` once (same way) so the live app opens with the
    InterNACHI template already imported, per the assignment's requirement.
 
-Live URL: _add after deploying_.
+Live URL: https://hive-inspect-template-importer-ten.vercel.app
 
 ## Importing a Spectora template
 
