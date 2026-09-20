@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* This app uses a single, deliberately light theme (see layout.tsx) rather
+   than following the OS color scheme, so it always looks the same for a
+   reviewer regardless of their system dark-mode setting. */
+html {
+  color-scheme: light;
+}
