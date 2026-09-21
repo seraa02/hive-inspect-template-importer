@@ -301,4 +301,191 @@ describe.skipIf(!process.env.DATABASE_URL)("repo (integration)", () => {
       expect(copyAfter?.sections.some((s) => s.name === "Pool & Spa (renamed on copy)")).toBe(true);
     });
   });
+
+  describe("createItem (Add item)", () => {
+    let addItemTemplateId: string;
+    let addItemCopyId: string;
+
+    afterAll(async () => {
+      const { deleteTemplate } = await import("../repo");
+      if (addItemTemplateId) await deleteTemplate(addItemTemplateId);
+      if (addItemCopyId) await deleteTemplate(addItemCopyId);
+    });
+
+    it("appends a new item at the end of a section, and it survives a fresh read", async () => {
+      const { commitImport, createItem, getTemplateDetail } = await import("../repo");
+
+      const parsed = {
+        sections: [
+          {
+            name: "Heating",
+            position: 0,
+            items: [
+              { name: "Furnace", position: 0, comments: [] },
+              { name: "Ductwork", position: 1, comments: [] },
+            ],
+          },
+        ],
+        stats: { sectionsCount: 1, itemsCount: 2, commentsCount: 0, rowsRead: 0 },
+        warnings: [],
+      };
+      const { templateId: id } = await commitImport({
+        templateName: `Add Item Test ${randomUUID()}`,
+        filename: "test.xlsx",
+        parsed,
+      });
+      addItemTemplateId = id;
+
+      const before = await getTemplateDetail(id);
+      const sectionId = before!.sections[0].id;
+
+      const { id: newItemId } = await createItem(sectionId, "Boiler");
+
+      const detail = await getTemplateDetail(id);
+      const items = detail!.sections[0].items;
+      expect(items).toHaveLength(3);
+      const newItem = items.find((i) => i.id === newItemId);
+      expect(newItem?.name).toBe("Boiler");
+      expect(newItem?.position).toBe(2); // appended after the 2 imported items
+      expect(newItem?.comments).toEqual([]);
+    });
+
+    it("rejects an empty or whitespace-only name without creating an item", async () => {
+      const { createItem, getTemplateDetail } = await import("../repo");
+
+      const before = await getTemplateDetail(addItemTemplateId);
+      const sectionId = before!.sections[0].id;
+
+      await expect(createItem(sectionId, "   ")).rejects.toThrow("Item name cannot be empty.");
+
+      const after = await getTemplateDetail(addItemTemplateId);
+      expect(after!.sections[0].items).toHaveLength(3); // unchanged
+    });
+
+    it("a manually-added item is included when the template is duplicated, and stays independent of the original", async () => {
+      const { duplicateTemplate, getTemplateDetail, updateItemName } = await import("../repo");
+
+      const { templateId: copyId } = await duplicateTemplate(addItemTemplateId, "Copy for add-item test");
+      addItemCopyId = copyId;
+
+      const copy = await getTemplateDetail(copyId);
+      const copiedItem = copy!.sections[0].items.find((i) => i.name === "Boiler");
+      expect(copiedItem).toBeDefined();
+
+      await updateItemName(copiedItem!.id, "Boiler (renamed on copy)");
+
+      const originalAfter = await getTemplateDetail(addItemTemplateId);
+      const copyAfter = await getTemplateDetail(addItemCopyId);
+
+      expect(originalAfter!.sections[0].items.find((i) => i.id === copiedItem!.id)).toBeUndefined();
+      expect(originalAfter!.sections[0].items.some((i) => i.name === "Boiler")).toBe(true);
+      expect(copyAfter!.sections[0].items.some((i) => i.name === "Boiler (renamed on copy)")).toBe(true);
+    });
+  });
+
+  describe("createComment (Add comment)", () => {
+    let addCommentTemplateId: string;
+    let addCommentCopyId: string;
+
+    afterAll(async () => {
+      const { deleteTemplate } = await import("../repo");
+      if (addCommentTemplateId) await deleteTemplate(addCommentTemplateId);
+      if (addCommentCopyId) await deleteTemplate(addCommentCopyId);
+    });
+
+    it("appends a new comment at the end of an item, with every other field null, and it survives a fresh read", async () => {
+      const { commitImport, createComment, getTemplateDetail } = await import("../repo");
+
+      const parsed = {
+        sections: [
+          {
+            name: "Plumbing",
+            position: 0,
+            items: [
+              {
+                name: "Water Heater",
+                position: 0,
+                comments: [
+                  {
+                    name: "Age",
+                    textHtml: "<p>10 years old.</p>",
+                    commentType: "info",
+                    severity: null,
+                    answerType: null,
+                    multipleChoiceOptions: null,
+                    unitTypeOptions: null,
+                    recommendation: null,
+                    defaultValue: null,
+                    position: 0,
+                    sourceMetadata: null,
+                    sourceRowNumber: 2,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        stats: { sectionsCount: 1, itemsCount: 1, commentsCount: 1, rowsRead: 1 },
+        warnings: [],
+      };
+      const { templateId: id } = await commitImport({
+        templateName: `Add Comment Test ${randomUUID()}`,
+        filename: "test.xlsx",
+        parsed,
+      });
+      addCommentTemplateId = id;
+
+      const before = await getTemplateDetail(id);
+      const itemId = before!.sections[0].items[0].id;
+
+      const { id: newCommentId } = await createComment(itemId, "Leaking");
+
+      const detail = await getTemplateDetail(id);
+      const comments = detail!.sections[0].items[0].comments;
+      expect(comments).toHaveLength(2);
+      const newComment = comments.find((c) => c.id === newCommentId);
+      expect(newComment?.name).toBe("Leaking");
+      expect(newComment?.position).toBe(1); // appended after the 1 imported comment
+      expect(newComment?.textHtml).toBeNull();
+      expect(newComment?.commentType).toBeNull();
+      expect(newComment?.severity).toBeNull();
+      expect(newComment?.answerType).toBeNull();
+      expect(newComment?.multipleChoiceOptions).toBeNull();
+      expect(newComment?.sourceMetadata).toBeNull();
+    });
+
+    it("rejects an empty or whitespace-only name without creating a comment", async () => {
+      const { createComment, getTemplateDetail } = await import("../repo");
+
+      const before = await getTemplateDetail(addCommentTemplateId);
+      const itemId = before!.sections[0].items[0].id;
+
+      await expect(createComment(itemId, "   ")).rejects.toThrow("Comment name cannot be empty.");
+
+      const after = await getTemplateDetail(addCommentTemplateId);
+      expect(after!.sections[0].items[0].comments).toHaveLength(2); // unchanged
+    });
+
+    it("a manually-added comment is included when the template is duplicated, and stays independent of the original", async () => {
+      const { duplicateTemplate, getTemplateDetail, updateCommentFields } = await import("../repo");
+
+      const { templateId: copyId } = await duplicateTemplate(addCommentTemplateId, "Copy for add-comment test");
+      addCommentCopyId = copyId;
+
+      const copy = await getTemplateDetail(copyId);
+      const copiedComment = copy!.sections[0].items[0].comments.find((c) => c.name === "Leaking");
+      expect(copiedComment).toBeDefined();
+
+      await updateCommentFields(copiedComment!.id, { textHtml: "<p>Added on the copy only.</p>" });
+
+      const originalAfter = await getTemplateDetail(addCommentTemplateId);
+      const copyAfter = await getTemplateDetail(addCommentCopyId);
+
+      const originalLeaking = originalAfter!.sections[0].items[0].comments.find((c) => c.name === "Leaking");
+      const copyLeaking = copyAfter!.sections[0].items[0].comments.find((c) => c.name === "Leaking");
+
+      expect(originalLeaking?.textHtml).toBeNull();
+      expect(copyLeaking?.textHtml).toBe("<p>Added on the copy only.</p>");
+    });
+  });
 });

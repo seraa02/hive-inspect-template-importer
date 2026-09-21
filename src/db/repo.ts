@@ -163,6 +163,76 @@ export async function createSection(templateId: string, name: string) {
   return { id };
 }
 
+/**
+ * Appends a new, empty item to an existing section - the same
+ * append-in-order convention as createSection() and the importer itself
+ * (mapRowsToTemplate assigns `position: section.items.length`). An item
+ * created this way starts with zero comments, exactly like a section
+ * created this way starts with zero items: it's a container, not a leaf,
+ * so there is nothing else to default. Duplication needs no special
+ * handling for the same reason createSection() doesn't: duplicateTemplate()
+ * iterates over whatever items a section has.
+ */
+export async function createItem(sectionId: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Item name cannot be empty.");
+
+  const existing = await db.query.items.findMany({
+    where: eq(items.sectionId, sectionId),
+    columns: { id: true },
+  });
+
+  const id = randomUUID();
+  await db.insert(items).values({
+    id,
+    sectionId,
+    name: trimmed,
+    position: existing.length,
+  });
+  return { id };
+}
+
+/**
+ * Appends a new comment to an existing item - the leaf level, so unlike
+ * createSection()/createItem() this does have sibling fields to consider
+ * (commentType, severity, answerType, multipleChoiceOptions,
+ * unitTypeOptions, recommendation, defaultValue, sourceMetadata). All of
+ * them are nullable columns (see schema.ts) and every one of them is
+ * already null on plenty of real imported comments (e.g. a comment with no
+ * severity or answer type is a normal, valid row today, not an edge case) -
+ * so a manually-added comment simply starts with all of them null/empty,
+ * exactly like any other field this editor doesn't build type-specific
+ * input for. Name and text are then editable the same way as any imported
+ * comment, via the existing EditableField/CommentCard components.
+ */
+export async function createComment(itemId: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Comment name cannot be empty.");
+
+  const existing = await db.query.comments.findMany({
+    where: eq(comments.itemId, itemId),
+    columns: { id: true },
+  });
+
+  const id = randomUUID();
+  await db.insert(comments).values({
+    id,
+    itemId,
+    name: trimmed,
+    textHtml: null,
+    commentType: null,
+    severity: null,
+    answerType: null,
+    multipleChoiceOptions: null,
+    unitTypeOptions: null,
+    recommendation: null,
+    defaultValue: null,
+    position: existing.length,
+    sourceMetadata: null,
+  });
+  return { id };
+}
+
 export async function updateSectionName(sectionId: string, name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Section name cannot be empty.");

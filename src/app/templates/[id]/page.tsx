@@ -5,10 +5,16 @@ import { CommentCard } from "./CommentCard";
 import { DuplicateButton } from "./DuplicateButton";
 import { DeleteTemplateButton } from "./DeleteTemplateButton";
 import { Accordion } from "./Accordion";
-import { AddSectionForm } from "./AddSectionForm";
+import { AddChildForm } from "./AddChildForm";
 import { EditorStatusProvider } from "./EditorStatusContext";
 import { EditorStatusBar } from "./EditorStatusBar";
-import { updateItemNameAction, updateSectionNameAction } from "@/app/actions";
+import {
+  createCommentAction,
+  createItemAction,
+  createSectionAction,
+  updateItemNameAction,
+  updateSectionNameAction,
+} from "@/app/actions";
 import { AlertIcon, ChevronIcon } from "@/app/_components/icons";
 
 export const dynamic = "force-dynamic";
@@ -110,13 +116,34 @@ export default async function TemplateDetailPage({
                       {item.comments.map((comment) => (
                         <CommentCard key={comment.id} templateId={template.id} comment={comment} />
                       ))}
+                      <li>
+                        <AddChildForm
+                          compact
+                          buttonLabel="Add comment"
+                          fieldLabel="New comment name"
+                          placeholder="e.g. Damaged"
+                          onCreate={createCommentAction.bind(null, template.id, item.id)}
+                        />
+                      </li>
                     </ul>
                   </Accordion>
                 ))}
+                <AddChildForm
+                  compact
+                  buttonLabel="Add item"
+                  fieldLabel="New item name"
+                  placeholder="e.g. Heater"
+                  onCreate={createItemAction.bind(null, template.id, section.id)}
+                />
               </div>
             </Accordion>
           ))}
-          <AddSectionForm templateId={template.id} />
+          <AddChildForm
+            buttonLabel="Add section"
+            fieldLabel="New section name"
+            placeholder="e.g. Pool & Spa"
+            onCreate={createSectionAction.bind(null, template.id)}
+          />
         </div>
       </div>
     </EditorStatusProvider>

@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { importSpectoraExport, ImportValidationError } from "@/lib/importer";
 import {
   commitImport,
+  createComment,
+  createItem,
   createSection,
   deleteTemplate,
   duplicateTemplate,
@@ -125,13 +127,25 @@ export async function deleteTemplateAction(templateId: string) {
 }
 
 /**
- * Adds a new, empty section to the end of a template - the one addition
- * to the editor beyond renaming existing content. Kept deliberately
- * narrow: no add-item, no add-comment, no reordering. See NOTES.md
- * ("Chosen improvement") for why this is the one extension made.
+ * Add section / Add item / Add comment mirror exactly the three levels
+ * the importer itself builds (template -> sections -> items -> comments -
+ * there is no separate "subsection" anywhere in this data model). Each is
+ * a thin wrapper: create the row, then revalidate so it shows up in the
+ * tree immediately. No reordering, no bulk creation - see NOTES.md
+ * ("Editor extension: Add section / item / comment").
  */
 export async function createSectionAction(templateId: string, name: string) {
   await createSection(templateId, name);
+  revalidatePath(`/templates/${templateId}`);
+}
+
+export async function createItemAction(templateId: string, sectionId: string, name: string) {
+  await createItem(sectionId, name);
+  revalidatePath(`/templates/${templateId}`);
+}
+
+export async function createCommentAction(templateId: string, itemId: string, name: string) {
+  await createComment(itemId, name);
   revalidatePath(`/templates/${templateId}`);
 }
 

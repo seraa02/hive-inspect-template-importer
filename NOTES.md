@@ -27,9 +27,10 @@ Spectora "Export HTML Text" spreadsheet (.xls/.xlsx)
   -> editor: section names, item names, comment names, and comment text
      are all independently editable, each field saving itself the moment
      it loses focus
-  -> Add section: the inspector can append a new, empty section for
-     content the original Spectora export didn't have, then rename and
-     duplicate it exactly like an imported one
+  -> Add section / Add item / Add comment: the inspector can append new,
+     empty rows at any of the three levels the importer itself builds, for
+     content the original Spectora export didn't have, then rename/edit
+     and duplicate them exactly like imported rows
   -> Save & Back / Back to Templates: a page-level status bar makes it
      clear whether anything is still unsaved before returning to the list
   -> duplicate: a full, independent deep copy the user can then edit
@@ -62,9 +63,11 @@ Spectora "Export HTML Text" spreadsheet (.xls/.xlsx)
   and by repeated manual testing, locally and in production.
 - Template deletion: a simple, confirmed, permanent delete (see "Template
   deletion" below for why this and not a recycle bin).
-- **Add section**: the one editor extension added beyond renaming existing
-  imported content - see "Editor extension: Add section" for the full
-  evaluation and why this was chosen over the alternatives.
+- **Add section / Add item / Add comment**: the editor extensions added
+  beyond renaming existing imported content, matching exactly the three
+  levels the importer itself builds - see "Editor extension: Add section /
+  Add item / Add comment" for the full evaluation and why this was chosen
+  over the alternatives.
 - Photo/image URL preservation: `Default Photo 1-10` and their captions
   are captured per row, not just flagged as an unrecognized column (see
   "Photo/image preservation").
@@ -72,10 +75,10 @@ Spectora "Export HTML Text" spreadsheet (.xls/.xlsx)
   required columns produces a clear, specific error and writes nothing to
   the database (verified both manually and by a rolled-back-transaction
   test).
-- Automated tests: 16 parser unit tests (no DB required) + 9 DB integration
+- Automated tests: 16 parser unit tests (no DB required) + 15 DB integration
   tests (persistence, editing, duplication/independence, deletion, adding a
-  section (including that it duplicates and stays independent), transactional
-  rollback).
+  section/item/comment at each level (including that each duplicates and
+  stays independent), transactional rollback).
 
 ## What was intentionally cut, and why
 
@@ -494,13 +497,13 @@ delete with a clear, specific warning is sufficient for template
 housekeeping in this workflow and adds no schema risk this late in the
 build.
 
-## Editor extension: Add section
+## Editor extension: Add section / Add item / Add comment
 
 **Not the assignment's required "one improvement"** (that's import trust -
 see "Customer-focused improvement" below). This is a separate, smaller
-scope decision made in a later pass, in response to an explicit prompt to
-inspect the application and decide whether exactly one additional editor
-capability would make it materially more useful, without turning it into a
+scope decision, made across two passes, in response to an explicit prompt
+to inspect the application and decide whether additional editor capability
+would make it materially more useful, without turning it into a
 template-building platform.
 
 **The customer problem it addresses.** Editing, before this, meant renaming
@@ -508,72 +511,103 @@ things the Spectora export already contained - the template was still
 frozen to whatever structure the old system produced. But migration is
 rarely the end of the story: an inspection company adopting a new system
 often uses the moment to add something their old template never had -
-e.g. a "Pool & Spa" section for a subset of properties, or a section their
-old workflow always handled outside the template. Without a way to add
-structure, the customer's only option would be re-importing a hand-edited
-spreadsheet, which defeats the point of having a structured editor at all.
+e.g. a "Pool & Spa" section for a subset of properties, a new item within
+an existing section, or one more comment/answer field on an item that
+already exists. Without a way to add structure at every level the importer
+itself builds, the customer's only real option would be re-importing a
+hand-edited spreadsheet, which defeats the point of having a structured
+editor at all.
 
-**Why this, and not the other candidates considered** (Add Item, Add
-Comment, a blank "New Template from scratch" button, or nothing):
+**First pass: Add Section only.** Add Item and Add Comment were initially
+evaluated and *deliberately not built* alongside Add Section, for a
+specific reason: a newly-created comment has sibling fields
+(`commentType`, `severity`, `answerType`, `multipleChoiceOptions`,
+`unitTypeOptions`, `recommendation`, `defaultValue`) that the editor
+doesn't build input controls for, so what should a blank comment's values
+be? Add Section had no such problem - a section is just a name and a child
+list - so it shipped alone first.
 
-- *Add Item* and *Add Comment* were considered and rejected for this pass.
-  A newly-created item has nowhere to put a first comment without also
-  building comment-creation, and a newly-created comment immediately raises
-  questions this baseline deliberately doesn't answer yet - what comment
-  type, answer type, or severity does a blank comment get? Answering that
-  well means building the same answer-type/option-picker UI already cut
-  from the baseline editor (see "What was intentionally cut, and why").
-  Add Section has no such problem: a section is just a name and a
-  child list, so it's genuinely complete with nothing built beyond a name
-  input.
-- *A blank "New Template" button* was considered and rejected because it
-  doesn't serve the migration workflow this project is actually about - the
-  assignment is explicitly framed around bringing in an *existing*
-  Spectora template, not authoring one from nothing. It would be a real,
-  separate product surface (template authoring) rather than an extension of
-  the migration/editing workflow already built.
-- *Doing nothing* was a genuine option (see the assignment's explicit
-  permission to add zero further improvements) but Add Section clears the
-  bar this pass's evaluation criteria set: it demonstrates that the
-  imported template is *actually* structured and editable - not just
-  renameable - at negligible implementation and risk cost.
+**Second pass: extended to Add Item and Add Comment, matching exactly what
+the importer itself builds.** On review, the concern above turned out to
+be smaller than it first looked: every one of those sibling columns is
+already **nullable** in the schema (`comments.severity`, `.answerType`,
+etc. - see `schema.ts`), and plenty of real imported comments already have
+all of them null (a comment with no severity or answer type is a normal,
+valid row today, not an edge case this would be inventing). So a
+manually-added comment simply starts with `name` filled in and every other
+field null - the exact same shape the editor already displays correctly
+for real imported data, requiring zero new UI beyond what `CommentCard`
+already renders for a "blank" field. `createSectionAction`,
+`createItemAction`, and `createCommentAction` are now symmetric: each adds
+a new row at the bottom of its parent, matching the three-level hierarchy
+`templates -> sections -> items -> comments` the importer builds - there is
+no separate "subsection" anywhere in this data model, so "add a
+subsection" is "add an item."
 
-**Why it's low-risk.** No schema or migration changes - `createSection()`
-(`src/db/repo.ts`) is a single `INSERT` using the exact same `sections`
-table, `position` convention (append at `existing count`, the same
-convention the importer itself uses), and cascading-FK behavior every other
-section already relies on. Duplication needed zero new code: `duplicateTemplate()`
-already iterates over whatever sections a template has, so a manually-added
-section is copied and made independent automatically, with no
-special-casing. It doesn't touch the import pipeline, the parser, or any
-existing mutation - it's purely additive.
+**A blank "New Template from scratch" button** was considered and rejected
+in the first pass and remains rejected: it doesn't serve the migration
+workflow this project is actually about - the assignment is explicitly
+framed around bringing in an *existing* Spectora template, not authoring
+one from nothing. That's a real, separate product surface (template
+authoring), not an extension of the migration/editing workflow built here.
 
-**What was implemented, precisely**: an "Add section" control at the
-bottom of the section list (`AddSectionForm.tsx`) that reveals a name input
-and Create/Cancel; a `createSectionAction` Server Action
-(`src/app/actions.ts`) calling the new `createSection()` repo function; the
-new section renders and behaves exactly like an imported one - editable
-via the existing `EditableField`, included automatically in duplication,
-and removable only by deleting the whole template (no per-section delete
-was added, on purpose - out of scope for this one extension).
+**Why it stayed low-risk even after extending to three levels.** No schema
+or migration changes at any point - `createSection()`, `createItem()`, and
+`createComment()` (`src/db/repo.ts`) are each a single `INSERT` using the
+exact tables, the same `position` = `existing count` append convention the
+importer itself uses, and the cascading-FK behavior every other row
+already relies on. Duplication needed zero new code at any level:
+`duplicateTemplate()` already iterates over whatever sections/items/
+comments a template has, so a manually-added row at any depth is copied
+and made independent automatically, with no special-casing per level.
 
-**What was deliberately not built alongside it**: Add Item, Add Comment,
-drag-and-drop or manual reordering of sections/items, a blank/from-scratch
-template creator, and per-section delete. Each would need its own design
-decision (see above) that this pass's narrow scope didn't call for.
+**What was implemented, precisely**: one reusable `AddChildForm.tsx`
+component (replacing the earlier section-only `AddSectionForm.tsx`) used
+at all three levels - a "+ Add section" control below the section list, a
+compact "+ Add item" control at the bottom of each section's item list,
+and a compact "+ Add comment" control at the bottom of each item's comment
+list - each bound to its own `create*Action` Server Action. A new row
+renders and behaves exactly like an imported one everywhere else: editable
+via the existing `EditableField`/`CommentCard`, included automatically in
+duplication, and removable only by deleting the whole template (no
+per-row delete was added, at any level - out of scope for this extension).
 
-**How it was tested**: three new DB integration tests
-(`src/db/__tests__/repo.test.ts`, "createSection (Add section)") - a
-section is appended at the correct position and survives a fresh read; an
-empty/whitespace-only name is rejected without writing anything; a
-manually-added section is included when its template is duplicated and
-stays independent of the original after the copy's section is renamed.
-Manually, locally and against the live production deployment: created a
-section, renamed it with the existing editor, duplicated the template,
-renamed the copy's added section, and confirmed via a direct database read
-that the original was untouched - and confirmed the accordion-persistence
-fix (see "Editing and the Save workflow") still holds when adding a
-section, not just when editing an existing field.
+**What was deliberately not built alongside it**: drag-and-drop or manual
+reordering of sections/items/comments, a blank/from-scratch template
+creator, per-row delete (section, item, or comment), and any input control
+for a comment's type/answer-type/severity/options - those remain read-only
+display fields, same as for imported comments (see "What was intentionally
+cut, and why").
+
+**How it was tested**: nine DB integration tests total
+(`src/db/__tests__/repo.test.ts` - "createSection (Add section)",
+"createItem (Add item)", "createComment (Add comment)", three each) -
+each level appends at the correct position and survives a fresh read; an
+empty/whitespace-only name is rejected without writing anything at any
+level; a manually-added section, item, or comment is included when its
+template is duplicated and stays independent of the original after the
+copy's row is edited. For the comment case specifically, the test also
+asserts every sibling field (`textHtml`, `commentType`, `severity`,
+`answerType`, `multipleChoiceOptions`, `sourceMetadata`) is null on
+creation, confirming the "matches an already-valid real shape" reasoning
+above, not just an assertion about it. Manually, locally and against the
+live production deployment: created a section, an item within it, and a
+comment within that item; renamed/edited each with the existing editor;
+duplicated the template; edited the copy's added rows; confirmed via
+direct database reads that the original was untouched at every level; and
+confirmed the accordion-persistence fix (see "Editing and the Save
+workflow") still holds when adding at any level, not just when editing an
+existing field. One real bug was caught and fixed during this pass, not
+in the feature itself but in how the feature was first wired: an early
+version of the Add Item/Add Comment JSX passed a plain arrow-function
+closure as the `onCreate` prop from the Server Component page to the
+Client Component form - Next.js requires a Server Action reference (a
+bound action, matching the existing `onSave={...Action.bind(null, ...)}`
+pattern already used for renaming) for a function passed across that
+boundary, not an arbitrary closure. Caught immediately by testing the live
+UI end to end rather than stopping at a passing `next build` - typecheck
+and lint do not catch this class of issue, only exercising the real
+request does.
 
 ## Approximate time spent
 
@@ -592,14 +626,27 @@ not a precise figure.
   bar, the accordion-collapse fix, re-verification of the photo/delete/
   rich-content behavior after those UI changes (locally and in
   production), a further production cleanup, and a documentation update.
-- **This pass** (final product-improvement evaluation): inspecting the
+- **Fourth pass** (product-improvement evaluation): inspecting the
   application against the assignment's actual baseline, evaluating several
   candidate editor extensions against explicit criteria, implementing the
-  one chosen (Add section), full regression testing of the existing
-  baseline plus the new feature (locally and in production), another
-  production cleanup, and this documentation update.
+  one chosen at the time (Add section), full regression testing of the
+  existing baseline plus the new feature (locally and in production),
+  another production cleanup, and a documentation update. Also produced a
+  full walkthrough-prep audit of the entire project (problem statement,
+  PDF requirement table, architecture trace, codebase map, testing/ground
+  truth, security, scalability, and a walkthrough script) as a separate,
+  read-only deliverable.
+- **This pass** (extending Add Section to Add Item and Add Comment):
+  comparing the existing Add Section pattern against what the import
+  pipeline actually builds (three levels, not two), extending the same
+  pattern to items and comments with a single generalized reusable
+  component instead of three near-duplicate ones, adding matching tests,
+  finding and fixing a real Server Action wiring bug (a plain closure
+  passed where a bound action reference was required) caught only by
+  testing the live UI, full regression testing of the whole baseline
+  again, and this documentation update.
 
-Altogether, low-to-mid single-digit hours across the four passes, not a
+Altogether, low-to-mid single-digit hours across the five passes, not a
 sustained multi-day effort - consistent with the assignment's "two focused
 days, hackathon style" framing when the actual coding time (as opposed to
 elapsed calendar time across sessions) is counted.
@@ -670,6 +717,18 @@ change; and verifying the new feature itself the same way - locally and
 against the live production deployment, cleaning up every piece of test
 data created along the way.
 
+Once more, in this pass (extending to Add Item / Add Comment), for:
+comparing what "Add Section" already did against what the import pipeline
+actually builds (three levels, not one) before writing anything;
+generalizing the existing single-purpose form into one reusable component
+rather than duplicating it; writing matching tests at each level; and,
+critically, catching a real bug (a Server Action passed as a plain closure
+instead of a bound reference) by actually exercising the live UI end to
+end rather than stopping once `npm run build` succeeded - `tsc` and
+`eslint` both passed on the broken version, since this class of error only
+surfaces at runtime, when Next.js tries to serialize the function across
+the server/client boundary.
+
 ## Important architectural decisions
 
 See DECISIONS.md for the full reasoning behind each one (deterministic
@@ -708,14 +767,17 @@ assumptions that would need to be undone.
 7. Fix `rel`/`target` not actually being added to preserved comment links
    (see "Formatting, links, and rich content" above) - found during final
    QA, not a security issue, left as-is.
-8. **Add Item, Add Comment, and a from-scratch "New Template" creator.**
-   Evaluated alongside Add Section and rejected for this pass specifically
-   - see "Editor extension: Add section" for why each raises questions
-   (default comment type/answer type, or building a whole authoring
-   surface unrelated to migration) that Add Section doesn't.
-9. **Per-section delete.** Only whole-template delete was built; removing
-   one section (including a manually-added one) requires deleting and
-   recreating the template, or simply not adding it in the first place.
+8. **A from-scratch "New Template" creator.** Evaluated and rejected - see
+   "Editor extension: Add section / Add item / Add comment" for why it's a
+   separate product surface (authoring) rather than an extension of the
+   migration workflow. (Add Item and Add Comment were also evaluated here
+   originally and rejected for that first pass, but were built in a later
+   pass once the "what does a blank comment default to" question had a
+   real answer - see that same section.)
+9. **Per-row delete for a section, item, or comment.** Only whole-template
+   delete was built; removing one row (including a manually-added one)
+   requires deleting and recreating the template, or simply not adding it
+   in the first place.
 
 **Resolved since it was first noticed**: the editor previously collapsed
 every open section/item back to closed after each individual field save.
@@ -749,14 +811,13 @@ which ones are unrelated speculation:
 - **Drag-and-drop section/item reordering.** The `position` columns
   already carry the ordering; only the UI to change it via drag-and-drop
   (rather than only via the source import order) is missing.
-- **Add Item / Add Comment**, extending the same pattern Add Section
-  established. The natural next step once there's a real answer for what
-  a newly-created comment's type/answer-type/severity should default to -
-  deliberately not answered in this pass (see "Editor extension: Add
-  section").
-- **Per-section delete**, so a section added by mistake (or one the
-  inspector decides they don't want) doesn't require deleting the whole
-  template.
+- **Per-row delete for a section, item, or comment**, so a row added by
+  mistake (or one the inspector decides they don't want) doesn't require
+  deleting the whole template.
+- **Editable answer type/options/severity for a newly-added comment**,
+  once there's real input UI for those fields at all (see below) - today
+  a manually-added comment's non-text fields stay null, same as many real
+  imported comments.
 - **Editable answer type / multiple-choice options / severity /
   recommendation.** Currently read-only display fields (see "What was
   intentionally NOT built").
