@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { importSpectoraExport, ImportValidationError } from "@/lib/importer";
-import { commitImport, duplicateTemplate, recordFailedImport, updateCommentFields, updateItemName, updateSectionName } from "@/db/repo";
+import {
+  commitImport,
+  deleteTemplate,
+  duplicateTemplate,
+  recordFailedImport,
+  updateCommentFields,
+  updateItemName,
+  updateSectionName,
+} from "@/db/repo";
 import type { ParsedTemplate } from "@/lib/importer/types";
 
 export interface PreviewResult {
@@ -99,6 +107,20 @@ export async function duplicateTemplateAction(templateId: string) {
   const { templateId: newId } = await duplicateTemplate(templateId);
   revalidatePath("/");
   redirect(`/templates/${newId}`);
+}
+
+/**
+ * Permanent delete, confirmed client-side before this is ever called (see
+ * DeleteTemplateButton). deleteTemplate() deletes 0 rows (a safe no-op,
+ * not an error) if the template was already gone - e.g. a second tab
+ * confirming a delete that already happened - so this is safe to call
+ * more than once for the same id. Always redirects to the template list,
+ * which is a harmless refresh if already there.
+ */
+export async function deleteTemplateAction(templateId: string) {
+  await deleteTemplate(templateId);
+  revalidatePath("/");
+  redirect("/");
 }
 
 export async function updateSectionNameAction(templateId: string, sectionId: string, name: string) {

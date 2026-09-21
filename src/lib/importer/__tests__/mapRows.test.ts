@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapRowsToTemplate, type RawRow } from "../mapRows";
+import { mapRowsToTemplate, type RawCell, type RawRow } from "../mapRows";
 import { ImportValidationError } from "../errors";
 
 const HEADER = [
@@ -189,5 +189,72 @@ describe("mapRowsToTemplate", () => {
     const result = mapRowsToTemplate(headerWithExtra, rows);
     expect(result.stats.commentsCount).toBe(1);
     expect(result.warnings.some((w) => w.message.includes("Some New Column"))).toBe(true);
+  });
+
+  describe("Default Photo columns", () => {
+    // Header order: ...HEADER, then Photo 1 url/caption, Photo 2 url/caption.
+    const PHOTO_HEADER = [
+      ...HEADER,
+      "Default Photo 1",
+      "Default Photo 1 Caption",
+      "Default Photo 2",
+      "Default Photo 2 Caption",
+    ];
+
+    function photoRow(
+      base: Partial<Record<string, unknown>>,
+      photo1Url: RawCell = null,
+      photo1Caption: RawCell = null,
+      photo2Url: RawCell = null,
+      photo2Caption: RawCell = null
+    ): RawRow {
+      return [...row(base), photo1Url, photo1Caption, photo2Url, photo2Caption];
+    }
+
+    it("captures a real Default Photo URL and caption into sourceMetadata, per row", () => {
+      const rows = [
+        photoRow(
+          {
+            "Section Name": "Structural Components",
+            "Item Name": "Foundation, Basement & Crawlspaces",
+            "Comment Name": "Material",
+          },
+          "https://cdn.spectora.com/default_photos/images/005/616/856/original/spectora_full_logo_white.png?1789939930",
+          "Sample caption"
+        ),
+      ];
+      const result = mapRowsToTemplate(PHOTO_HEADER, rows);
+      const comment = result.sections[0].items[0].comments[0];
+      const meta = comment.sourceMetadata as { photos?: { slot: number; url: string; caption: string | null }[] };
+      expect(meta.photos).toEqual([
+        {
+          slot: 1,
+          url: "https://cdn.spectora.com/default_photos/images/005/616/856/original/spectora_full_logo_white.png?1789939930",
+          caption: "Sample caption",
+        },
+      ]);
+      // Not reported as unrecognized now that it's a supported column.
+      expect(result.warnings.some((w) => w.message.includes("Default Photo 1"))).toBe(false);
+    });
+
+    it("does not treat an empty photo field as meaningful content", () => {
+      const rows = [photoRow({ "Section Name": "S", "Item Name": "I", "Comment Name": "C" })];
+      const result = mapRowsToTemplate(PHOTO_HEADER, rows);
+      const comment = result.sections[0].items[0].comments[0];
+      const meta = comment.sourceMetadata as { photos?: unknown };
+      expect(meta.photos).toBeUndefined();
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it("rejects an unsafe photo URL scheme and warns instead of storing it", () => {
+      const rows = [
+        photoRow({ "Section Name": "S", "Item Name": "I", "Comment Name": "C" }, "javascript:alert(1)"),
+      ];
+      const result = mapRowsToTemplate(PHOTO_HEADER, rows);
+      const comment = result.sections[0].items[0].comments[0];
+      const meta = comment.sourceMetadata as { photos?: unknown };
+      expect(meta.photos).toBeUndefined();
+      expect(result.warnings.some((w) => w.message.includes("unsupported URL scheme"))).toBe(true);
+    });
   });
 });

@@ -3,6 +3,7 @@ import { getImportForTemplate, getTemplateDetail } from "@/db/repo";
 import { EditableField } from "./EditableField";
 import { CommentCard } from "./CommentCard";
 import { DuplicateButton } from "./DuplicateButton";
+import { DeleteTemplateButton } from "./DeleteTemplateButton";
 import { updateItemNameAction, updateSectionNameAction } from "@/app/actions";
 import { AlertIcon, ChevronIcon } from "@/app/_components/icons";
 
@@ -29,7 +30,10 @@ export default async function TemplateDetailPage({
             sections
           </p>
         </div>
-        <DuplicateButton templateId={template.id} />
+        <div className="flex items-center gap-2">
+          <DuplicateButton templateId={template.id} />
+          <DeleteTemplateButton templateId={template.id} templateName={template.name} />
+        </div>
       </div>
 
       {importRecord && importRecord.warnings.length > 0 && (

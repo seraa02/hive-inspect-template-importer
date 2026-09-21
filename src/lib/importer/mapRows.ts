@@ -3,7 +3,10 @@ import { ImportValidationError } from "./errors";
 import { sanitizeComment } from "./sanitizeComment";
 import {
   CANONICAL_COLUMNS,
+  PHOTO_SLOTS,
   REQUIRED_COLUMNS,
+  photoCaptionColumnKey,
+  photoUrlColumnKey,
   resolveColumnIndexes,
   type CanonicalColumnKey,
 } from "./headers";
@@ -43,6 +46,24 @@ function splitList(v: RawCell): string[] | null {
     .map((p) => decode(p.trim()))
     .filter((p) => p.length > 0);
   return parts.length > 0 ? parts : null;
+}
+
+export interface ParsedPhoto {
+  slot: number;
+  url: string;
+  caption: string | null;
+}
+
+// Same allowed-scheme convention as sanitizeComment's link handling:
+// only http/https survive. javascript:, data:, and anything else is
+// rejected rather than stored.
+const ALLOWED_PHOTO_URL_SCHEMES = ["http:", "https:"];
+
+function sanitizePhotoUrl(v: RawCell): { url: string | null; unsafe: boolean } {
+  const s = cellToString(v);
+  if (s === null) return { url: null, unsafe: false }; // empty photo field - not meaningful
+  const isSafe = ALLOWED_PHOTO_URL_SCHEMES.some((scheme) => s.toLowerCase().startsWith(scheme));
+  return isSafe ? { url: s, unsafe: false } : { url: null, unsafe: true };
 }
 
 /**
@@ -192,6 +213,30 @@ export function mapRowsToTemplate(headerRow: RawRow, dataRows: RawRow[]): Parsed
       const v = cellToString(get(row, key));
       if (v !== null) sourceMetadata[key] = v;
     }
+
+    // Default Photo 1-10 (+ captions): preserve per-row values rather than
+    // just noting the column exists. An empty photo slot is not meaningful
+    // and is skipped without comment; an unsafe URL scheme (javascript:,
+    // data:, etc.) is rejected and reported, same convention as comment-body
+    // links in sanitizeComment.ts.
+    const photos: ParsedPhoto[] = [];
+    for (const slot of PHOTO_SLOTS) {
+      const { url, unsafe } = sanitizePhotoUrl(get(row, photoUrlColumnKey(slot)));
+      if (unsafe) {
+        warnings.push({
+          level: "warning",
+          message: `Comment "${commentName}" has a Default Photo ${slot} value with an unsupported URL scheme; it was not imported.`,
+          rowNumber,
+          section: sectionName,
+          item: itemName,
+          comment: commentName,
+        });
+        continue;
+      }
+      if (url === null) continue;
+      photos.push({ slot, url, caption: cellToString(get(row, photoCaptionColumnKey(slot))) });
+    }
+    if (photos.length > 0) sourceMetadata.photos = photos;
 
     const orderRaw = cellToNumber(get(row, "order"));
 

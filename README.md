@@ -29,6 +29,7 @@ Upload (.xls/.xlsx)
   -> editor: section/item/comment name + comment text are editable,
      each edit re-sanitized and saved via a Server Action
   -> duplicate: deep-copies the whole hierarchy with new IDs in one transaction
+  -> delete: confirmed, permanent, cascades to sections/items/comments
 ```
 
 The importer (`src/lib/importer/`) is pure and has no dependency on the
@@ -120,7 +121,8 @@ and no third-party API key in this project.
 ```bash
 npm test        # parser unit tests - deterministic, no database required
 npm run test:db # DB integration tests - persistence, editing, duplication,
-                 # independence, transactional rollback. Requires DATABASE_URL.
+                 # independence, deletion, transactional rollback. Requires
+                 # DATABASE_URL.
 ```
 
 `npm test` is safe to run with zero setup (CI, a fresh clone, a reviewer who
@@ -163,17 +165,26 @@ Live URL: https://hive-inspect-template-importer-ten.vercel.app
 3. Click **Import template** to commit it. You're redirected to the new
    template's editor.
 
+## Deleting a template
+
+**Delete** (template list or template detail page) permanently removes a
+template and its sections/items/comments, after an explicit confirmation
+naming the template. Not required by the assignment; added for cleaning up
+stray or duplicate imports. No recycle bin - see NOTES.md for why.
+
 ## Supported input format
 
 A single-sheet `.xls`/`.xlsx` workbook (Spectora's export is actually an
 OOXML/`.xlsx` file with a header row containing at least `Section Name`,
 `Item Name`, and `Comment Name`. The importer also reads (when present)
 `Comment Text`, `Comment Type`, `Category`, `Multiple Choice Options`, `Unit
-Type Options`, `Recommendation`, `Order (w/i item)`, `Answer Type`, and
-`Default Value`. Column order does not matter, and unrecognized extra
-columns produce a warning rather than a failure. See NOTES.md for the full
-breakdown of what was actually found in the committed export and how each
-field is handled.
+Type Options`, `Recommendation`, `Order (w/i item)`, `Answer Type`,
+`Default Value`, and `Default Photo 1-10` (+ captions) - photo URLs are
+captured per row into `sourceMetadata` and shown as a clickable "Imported
+photo" indicator in the editor, restricted to `http`/`https` URLs. Column
+order does not matter, and unrecognized extra columns produce a warning
+rather than a failure. See NOTES.md for the full breakdown of what was
+actually found in the committed export and how each field is handled.
 
 ## Sample export
 

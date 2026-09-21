@@ -22,10 +22,16 @@ import { relations } from "drizzle-orm";
  * duplication, edits, and re-reads.
  *
  * `sourceMetadata` on comments holds low-signal columns from the export
- * (Locked, Simple Format, Disable Photos, Default Photo 1-10 + captions,
- * Uses, Default Location, Default Value 2, Default Unit Type, Last
- * Modified) so nothing from the source row is silently discarded, without
- * spending 20 mostly-empty columns on fields this fixture never uses.
+ * (Locked, Simple Format, Disable Photos, Uses, Default Location, Default
+ * Value 2, Default Unit Type, Last Modified) so nothing from the source
+ * row is silently discarded, without spending mostly-empty columns on
+ * fields the committed fixture never uses.
+ *
+ * `sourceMetadata.photos` (when present) is an array of
+ * `{ slot, url, caption }` built from the export's Default Photo 1-10 (+
+ * caption) columns - see src/lib/importer/mapRows.ts. Empty photo slots are
+ * omitted rather than stored as empty; URLs are restricted to http/https
+ * (see sanitizePhotoUrl in mapRows.ts).
  */
 
 export const templates = pgTable("templates", {

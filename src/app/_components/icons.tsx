@@ -100,3 +100,25 @@ export function FileIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function TrashIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)} width={15} height={15}>
+      <path d="M4 6h12" />
+      <path d="M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6" />
+      <path d="M5.5 6 6 15.5a1 1 0 0 0 1 .95h6a1 1 0 0 0 1-.95L14.5 6" />
+      <path d="M8.5 9v4.5" />
+      <path d="M11.5 9v4.5" />
+    </svg>
+  );
+}
+
+export function ImageIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)} width={14} height={14}>
+      <rect x="2.5" y="3.5" width="15" height="13" rx="1.5" />
+      <circle cx="7" cy="8" r="1.4" />
+      <path d="M3 14.5 8 10l3 2.5 2.5-2 3.5 4" />
+    </svg>
+  );
+}

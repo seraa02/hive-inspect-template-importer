@@ -43,11 +43,49 @@ export const CANONICAL_COLUMNS = {
   disablePhotos: "disable photos",
   uses: "uses",
   lastModified: "last modified",
+  // Default Photo 1-10 + captions: recognized (so they don't show up as
+  // "unrecognized columns") and their per-row values are captured into
+  // comments.sourceMetadata.photos - see mapRows.ts. Listed explicitly
+  // rather than generated, to keep this map a plain, literal-typed object.
+  defaultPhoto1: "default photo 1",
+  defaultPhoto1Caption: "default photo 1 caption",
+  defaultPhoto2: "default photo 2",
+  defaultPhoto2Caption: "default photo 2 caption",
+  defaultPhoto3: "default photo 3",
+  defaultPhoto3Caption: "default photo 3 caption",
+  defaultPhoto4: "default photo 4",
+  defaultPhoto4Caption: "default photo 4 caption",
+  defaultPhoto5: "default photo 5",
+  defaultPhoto5Caption: "default photo 5 caption",
+  defaultPhoto6: "default photo 6",
+  defaultPhoto6Caption: "default photo 6 caption",
+  defaultPhoto7: "default photo 7",
+  defaultPhoto7Caption: "default photo 7 caption",
+  defaultPhoto8: "default photo 8",
+  defaultPhoto8Caption: "default photo 8 caption",
+  defaultPhoto9: "default photo 9",
+  defaultPhoto9Caption: "default photo 9 caption",
+  defaultPhoto10: "default photo 10",
+  defaultPhoto10Caption: "default photo 10 caption",
 } as const;
 
 export type CanonicalColumnKey = keyof typeof CANONICAL_COLUMNS;
 
 export const REQUIRED_COLUMNS: CanonicalColumnKey[] = ["sectionName", "itemName", "commentName"];
+
+// The 10 photo slots Spectora's export supports, used to loop over
+// defaultPhotoN / defaultPhotoNCaption pairs instead of hand-listing them
+// again at every call site.
+export const PHOTO_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+export type PhotoSlot = (typeof PHOTO_SLOTS)[number];
+
+export function photoUrlColumnKey(slot: PhotoSlot): CanonicalColumnKey {
+  return `defaultPhoto${slot}` as CanonicalColumnKey;
+}
+
+export function photoCaptionColumnKey(slot: PhotoSlot): CanonicalColumnKey {
+  return `defaultPhoto${slot}Caption` as CanonicalColumnKey;
+}
 
 /**
  * Maps each canonical column to the actual column index found in the

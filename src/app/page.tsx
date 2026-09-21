@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listTemplates } from "@/db/repo";
 import { DuplicateButton } from "./templates/[id]/DuplicateButton";
+import { DeleteTemplateButton } from "./templates/[id]/DeleteTemplateButton";
 import { TemplatesIcon } from "./_components/icons";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +64,7 @@ export default async function HomePage() {
                         Open
                       </Link>
                       <DuplicateButton templateId={t.id} />
+                      <DeleteTemplateButton templateId={t.id} templateName={t.name} />
                     </div>
                   </td>
                 </tr>

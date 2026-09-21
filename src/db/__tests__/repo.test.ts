@@ -161,4 +161,74 @@ describe.skipIf(!process.env.DATABASE_URL)("repo (integration)", () => {
     const rows = await db.select().from(templates).where(eq(templates.name, templateName));
     expect(rows).toHaveLength(0);
   });
+
+  describe("template deletion", () => {
+    // "Cancel" is a client-side confirmation dialog (DeleteTemplateButton)
+    // that simply never calls the delete Server Action - there is nothing
+    // to assert here at the repo layer beyond "the action was never
+    // invoked," which is exercised by browser testing, not a DB test.
+
+    it("deletes an existing template and its sections/items/comments; it is no longer retrievable", async () => {
+      const { commitImport, deleteTemplate, getTemplateDetail } = await import("../repo");
+      const { db } = await import("../client");
+      const { sections, items, comments } = await import("../schema");
+      const { eq } = await import("drizzle-orm");
+
+      const parsed = {
+        sections: [
+          {
+            name: "Roof",
+            position: 0,
+            items: [
+              {
+                name: "Coverings",
+                position: 0,
+                comments: [
+                  {
+                    name: "Material",
+                    textHtml: "<p>Asphalt shingle.</p>",
+                    commentType: "info",
+                    severity: null,
+                    answerType: null,
+                    multipleChoiceOptions: null,
+                    unitTypeOptions: null,
+                    recommendation: null,
+                    defaultValue: null,
+                    position: 0,
+                    sourceMetadata: null,
+                    sourceRowNumber: 2,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        stats: { sectionsCount: 1, itemsCount: 1, commentsCount: 1, rowsRead: 1 },
+        warnings: [],
+      };
+
+      const { templateId: id } = await commitImport({
+        templateName: `Delete Test ${randomUUID()}`,
+        filename: "test.xlsx",
+        parsed,
+      });
+
+      const before = await getTemplateDetail(id);
+      const sectionId = before!.sections[0].id;
+      const itemId = before!.sections[0].items[0].id;
+      const commentId = before!.sections[0].items[0].comments[0].id;
+
+      await deleteTemplate(id);
+
+      expect(await getTemplateDetail(id)).toBeUndefined();
+      expect(await db.select().from(sections).where(eq(sections.id, sectionId))).toHaveLength(0);
+      expect(await db.select().from(items).where(eq(items.id, itemId))).toHaveLength(0);
+      expect(await db.select().from(comments).where(eq(comments.id, commentId))).toHaveLength(0);
+    });
+
+    it("deleting a template that no longer exists is a safe no-op, not an error", async () => {
+      const { deleteTemplate } = await import("../repo");
+      await expect(deleteTemplate(randomUUID())).resolves.not.toThrow();
+    });
+  });
 });
