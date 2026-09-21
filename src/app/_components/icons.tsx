@@ -122,3 +122,12 @@ export function ImageIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function PlusIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base(props)} width={15} height={15}>
+      <path d="M10 4v12" />
+      <path d="M4 10h12" />
+    </svg>
+  );
+}

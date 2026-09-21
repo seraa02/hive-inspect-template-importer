@@ -133,6 +133,36 @@ export async function getImportForTemplate(templateId: string) {
   });
 }
 
+/**
+ * Appends a new, empty section to an existing template. Position is the
+ * current section count for that template, matching the append-in-order
+ * convention already used by the importer (mapRowsToTemplate assigns
+ * `position: sections.length` the same way) - sections are never deleted
+ * or reordered individually, so this stays contiguous and correct.
+ * Duplication and independent-copy behavior need no special handling:
+ * duplicateTemplate() already iterates over whatever sections a template
+ * has, so a manually-added section is copied and made independent exactly
+ * like every imported one.
+ */
+export async function createSection(templateId: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Section name cannot be empty.");
+
+  const existing = await db.query.sections.findMany({
+    where: eq(sections.templateId, templateId),
+    columns: { id: true },
+  });
+
+  const id = randomUUID();
+  await db.insert(sections).values({
+    id,
+    templateId,
+    name: trimmed,
+    position: existing.length,
+  });
+  return { id };
+}
+
 export async function updateSectionName(sectionId: string, name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Section name cannot be empty.");

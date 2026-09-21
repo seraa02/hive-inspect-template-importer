@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { importSpectoraExport, ImportValidationError } from "@/lib/importer";
 import {
   commitImport,
+  createSection,
   deleteTemplate,
   duplicateTemplate,
   recordFailedImport,
@@ -121,6 +122,17 @@ export async function deleteTemplateAction(templateId: string) {
   await deleteTemplate(templateId);
   revalidatePath("/");
   redirect("/");
+}
+
+/**
+ * Adds a new, empty section to the end of a template - the one addition
+ * to the editor beyond renaming existing content. Kept deliberately
+ * narrow: no add-item, no add-comment, no reordering. See NOTES.md
+ * ("Chosen improvement") for why this is the one extension made.
+ */
+export async function createSectionAction(templateId: string, name: string) {
+  await createSection(templateId, name);
+  revalidatePath(`/templates/${templateId}`);
 }
 
 export async function updateSectionNameAction(templateId: string, sectionId: string, name: string) {

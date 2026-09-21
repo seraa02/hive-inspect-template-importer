@@ -231,4 +231,74 @@ describe.skipIf(!process.env.DATABASE_URL)("repo (integration)", () => {
       await expect(deleteTemplate(randomUUID())).resolves.not.toThrow();
     });
   });
+
+  describe("createSection (Add section)", () => {
+    let addSectionTemplateId: string;
+    let addSectionCopyId: string;
+
+    afterAll(async () => {
+      const { deleteTemplate } = await import("../repo");
+      if (addSectionTemplateId) await deleteTemplate(addSectionTemplateId);
+      if (addSectionCopyId) await deleteTemplate(addSectionCopyId);
+    });
+
+    it("appends a new section at the end, and it survives a fresh read", async () => {
+      const { commitImport, createSection, getTemplateDetail } = await import("../repo");
+
+      const parsed = {
+        sections: [
+          { name: "Roof", position: 0, items: [] },
+          { name: "Exterior", position: 1, items: [] },
+        ],
+        stats: { sectionsCount: 2, itemsCount: 0, commentsCount: 0, rowsRead: 0 },
+        warnings: [],
+      };
+      const { templateId: id } = await commitImport({
+        templateName: `Add Section Test ${randomUUID()}`,
+        filename: "test.xlsx",
+        parsed,
+      });
+      addSectionTemplateId = id;
+
+      const { id: newSectionId } = await createSection(id, "Pool & Spa");
+
+      const detail = await getTemplateDetail(id);
+      expect(detail?.sections).toHaveLength(3);
+      const newSection = detail!.sections.find((s) => s.id === newSectionId);
+      expect(newSection?.name).toBe("Pool & Spa");
+      expect(newSection?.position).toBe(2); // appended after the 2 imported sections
+      expect(newSection?.items).toEqual([]);
+    });
+
+    it("rejects an empty or whitespace-only name without creating a section", async () => {
+      const { createSection, getTemplateDetail } = await import("../repo");
+
+      await expect(createSection(addSectionTemplateId, "   ")).rejects.toThrow(
+        "Section name cannot be empty."
+      );
+
+      const detail = await getTemplateDetail(addSectionTemplateId);
+      expect(detail?.sections).toHaveLength(3); // unchanged from the previous test
+    });
+
+    it("a manually-added section is included when the template is duplicated, and stays independent of the original", async () => {
+      const { duplicateTemplate, getTemplateDetail, updateSectionName } = await import("../repo");
+
+      const { templateId: copyId } = await duplicateTemplate(addSectionTemplateId, "Copy for add-section test");
+      addSectionCopyId = copyId;
+
+      const copy = await getTemplateDetail(copyId);
+      const copiedSection = copy!.sections.find((s) => s.name === "Pool & Spa");
+      expect(copiedSection).toBeDefined();
+
+      await updateSectionName(copiedSection!.id, "Pool & Spa (renamed on copy)");
+
+      const originalAfter = await getTemplateDetail(addSectionTemplateId);
+      const copyAfter = await getTemplateDetail(addSectionCopyId);
+
+      expect(originalAfter?.sections.find((s) => s.id === copiedSection!.id)).toBeUndefined();
+      expect(originalAfter?.sections.some((s) => s.name === "Pool & Spa")).toBe(true);
+      expect(copyAfter?.sections.some((s) => s.name === "Pool & Spa (renamed on copy)")).toBe(true);
+    });
+  });
 });

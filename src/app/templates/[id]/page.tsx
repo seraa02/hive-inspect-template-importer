@@ -5,6 +5,7 @@ import { CommentCard } from "./CommentCard";
 import { DuplicateButton } from "./DuplicateButton";
 import { DeleteTemplateButton } from "./DeleteTemplateButton";
 import { Accordion } from "./Accordion";
+import { AddSectionForm } from "./AddSectionForm";
 import { EditorStatusProvider } from "./EditorStatusContext";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { updateItemNameAction, updateSectionNameAction } from "@/app/actions";
@@ -115,6 +116,7 @@ export default async function TemplateDetailPage({
               </div>
             </Accordion>
           ))}
+          <AddSectionForm templateId={template.id} />
         </div>
       </div>
     </EditorStatusProvider>

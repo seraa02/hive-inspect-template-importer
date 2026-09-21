@@ -28,10 +28,12 @@ Upload (.xls/.xlsx)
      + an `imports` row recording warnings and counts (src/db/repo.ts)
   -> editor: section/item/comment name + comment text are editable,
      each edit re-sanitized and saved via a Server Action on blur
+  -> Add section: append a new, empty section to the template
   -> editor status bar: aggregates per-field save state into one
      "All changes saved" / "Saving..." / "Unsaved changes" answer, with
      Back to Templates / Save & Back to Templates navigation
-  -> duplicate: deep-copies the whole hierarchy with new IDs in one transaction
+  -> duplicate: deep-copies the whole hierarchy (including any added
+     sections) with new IDs in one transaction
   -> delete: confirmed, permanent, cascades to sections/items/comments
 ```
 
@@ -178,6 +180,15 @@ ways back to the template list: **Back to Templates**, or **Save & Back to
 Templates** (which makes sure whatever you were just editing has been
 saved before navigating away). See NOTES.md ("Editing and the Save
 workflow") for exactly how this behaves.
+
+## Adding a section
+
+**Add section** (bottom of the template editor) appends a new, empty
+section to the template - for content the original Spectora template
+didn't have. Rename it with the same inline editing as any imported
+section, and it's included automatically the next time the template is
+duplicated. No Add Item / Add Comment (see NOTES.md, "Editor extension:
+Add section," for why this one addition and not those).
 
 ## Deleting a template
 

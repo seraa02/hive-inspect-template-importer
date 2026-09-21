@@ -27,6 +27,9 @@ Spectora "Export HTML Text" spreadsheet (.xls/.xlsx)
   -> editor: section names, item names, comment names, and comment text
      are all independently editable, each field saving itself the moment
      it loses focus
+  -> Add section: the inspector can append a new, empty section for
+     content the original Spectora export didn't have, then rename and
+     duplicate it exactly like an imported one
   -> Save & Back / Back to Templates: a page-level status bar makes it
      clear whether anything is still unsaved before returning to the list
   -> duplicate: a full, independent deep copy the user can then edit
@@ -59,6 +62,9 @@ Spectora "Export HTML Text" spreadsheet (.xls/.xlsx)
   and by repeated manual testing, locally and in production.
 - Template deletion: a simple, confirmed, permanent delete (see "Template
   deletion" below for why this and not a recycle bin).
+- **Add section**: the one editor extension added beyond renaming existing
+  imported content - see "Editor extension: Add section" for the full
+  evaluation and why this was chosen over the alternatives.
 - Photo/image URL preservation: `Default Photo 1-10` and their captions
   are captured per row, not just flagged as an unrecognized column (see
   "Photo/image preservation").
@@ -66,9 +72,10 @@ Spectora "Export HTML Text" spreadsheet (.xls/.xlsx)
   required columns produces a clear, specific error and writes nothing to
   the database (verified both manually and by a rolled-back-transaction
   test).
-- Automated tests: 16 parser unit tests (no DB required) + 6 DB integration
-  tests (persistence, editing, duplication/independence, deletion,
-  transactional rollback).
+- Automated tests: 16 parser unit tests (no DB required) + 9 DB integration
+  tests (persistence, editing, duplication/independence, deletion, adding a
+  section (including that it duplicates and stays independent), transactional
+  rollback).
 
 ## What was intentionally cut, and why
 
@@ -376,6 +383,14 @@ These are tracked as two different kinds of warnings on purpose:
   with a field still focused and dirty actually persists that edit (via a
   direct database read) before navigating away - not just after enough
   time happened to pass.
+- In the Add Section pass: re-verified the entire baseline above again
+  (fresh imports of both real files, edit/reload, duplicate/independence,
+  photo preservation, both failure cases, rich content) still holds
+  unchanged, both locally and in production, before adding anything new -
+  then tested Add Section itself the same way: created a section, renamed
+  it, duplicated the template, renamed the copy's added section, and
+  confirmed via direct database reads that the original was untouched -
+  on both the local database and the live production database.
 
 ## Failure cases (demonstrated)
 
@@ -479,6 +494,87 @@ delete with a clear, specific warning is sufficient for template
 housekeeping in this workflow and adds no schema risk this late in the
 build.
 
+## Editor extension: Add section
+
+**Not the assignment's required "one improvement"** (that's import trust -
+see "Customer-focused improvement" below). This is a separate, smaller
+scope decision made in a later pass, in response to an explicit prompt to
+inspect the application and decide whether exactly one additional editor
+capability would make it materially more useful, without turning it into a
+template-building platform.
+
+**The customer problem it addresses.** Editing, before this, meant renaming
+things the Spectora export already contained - the template was still
+frozen to whatever structure the old system produced. But migration is
+rarely the end of the story: an inspection company adopting a new system
+often uses the moment to add something their old template never had -
+e.g. a "Pool & Spa" section for a subset of properties, or a section their
+old workflow always handled outside the template. Without a way to add
+structure, the customer's only option would be re-importing a hand-edited
+spreadsheet, which defeats the point of having a structured editor at all.
+
+**Why this, and not the other candidates considered** (Add Item, Add
+Comment, a blank "New Template from scratch" button, or nothing):
+
+- *Add Item* and *Add Comment* were considered and rejected for this pass.
+  A newly-created item has nowhere to put a first comment without also
+  building comment-creation, and a newly-created comment immediately raises
+  questions this baseline deliberately doesn't answer yet - what comment
+  type, answer type, or severity does a blank comment get? Answering that
+  well means building the same answer-type/option-picker UI already cut
+  from the baseline editor (see "What was intentionally cut, and why").
+  Add Section has no such problem: a section is just a name and a
+  child list, so it's genuinely complete with nothing built beyond a name
+  input.
+- *A blank "New Template" button* was considered and rejected because it
+  doesn't serve the migration workflow this project is actually about - the
+  assignment is explicitly framed around bringing in an *existing*
+  Spectora template, not authoring one from nothing. It would be a real,
+  separate product surface (template authoring) rather than an extension of
+  the migration/editing workflow already built.
+- *Doing nothing* was a genuine option (see the assignment's explicit
+  permission to add zero further improvements) but Add Section clears the
+  bar this pass's evaluation criteria set: it demonstrates that the
+  imported template is *actually* structured and editable - not just
+  renameable - at negligible implementation and risk cost.
+
+**Why it's low-risk.** No schema or migration changes - `createSection()`
+(`src/db/repo.ts`) is a single `INSERT` using the exact same `sections`
+table, `position` convention (append at `existing count`, the same
+convention the importer itself uses), and cascading-FK behavior every other
+section already relies on. Duplication needed zero new code: `duplicateTemplate()`
+already iterates over whatever sections a template has, so a manually-added
+section is copied and made independent automatically, with no
+special-casing. It doesn't touch the import pipeline, the parser, or any
+existing mutation - it's purely additive.
+
+**What was implemented, precisely**: an "Add section" control at the
+bottom of the section list (`AddSectionForm.tsx`) that reveals a name input
+and Create/Cancel; a `createSectionAction` Server Action
+(`src/app/actions.ts`) calling the new `createSection()` repo function; the
+new section renders and behaves exactly like an imported one - editable
+via the existing `EditableField`, included automatically in duplication,
+and removable only by deleting the whole template (no per-section delete
+was added, on purpose - out of scope for this one extension).
+
+**What was deliberately not built alongside it**: Add Item, Add Comment,
+drag-and-drop or manual reordering of sections/items, a blank/from-scratch
+template creator, and per-section delete. Each would need its own design
+decision (see above) that this pass's narrow scope didn't call for.
+
+**How it was tested**: three new DB integration tests
+(`src/db/__tests__/repo.test.ts`, "createSection (Add section)") - a
+section is appended at the correct position and survives a fresh read; an
+empty/whitespace-only name is rejected without writing anything; a
+manually-added section is included when its template is duplicated and
+stays independent of the original after the copy's section is renamed.
+Manually, locally and against the live production deployment: created a
+section, renamed it with the existing editor, duplicated the template,
+renamed the copy's added section, and confirmed via a direct database read
+that the original was untouched - and confirmed the accordion-persistence
+fix (see "Editing and the Save workflow") still holds when adding a
+section, not just when editing an existing field.
+
 ## Approximate time spent
 
 This is an estimate reconstructed from the git history and the scope of
@@ -492,12 +588,18 @@ not a precise figure.
   requirements audit against the assignment PDF, the photo-preservation
   fix, the delete feature, production database cleanup, and a NOTES.md
   update.
-- **This pass** (final implementation pass): the Save-workflow status bar,
-  the accordion-collapse fix, re-verification of the photo/delete/rich-
-  content behavior after those UI changes (locally and in production), a
-  further production cleanup, and this documentation update.
+- **Third pass** (Save workflow + accordion fix): the Save-workflow status
+  bar, the accordion-collapse fix, re-verification of the photo/delete/
+  rich-content behavior after those UI changes (locally and in
+  production), a further production cleanup, and a documentation update.
+- **This pass** (final product-improvement evaluation): inspecting the
+  application against the assignment's actual baseline, evaluating several
+  candidate editor extensions against explicit criteria, implementing the
+  one chosen (Add section), full regression testing of the existing
+  baseline plus the new feature (locally and in production), another
+  production cleanup, and this documentation update.
 
-Altogether, low-to-mid single-digit hours across the three passes, not a
+Altogether, low-to-mid single-digit hours across the four passes, not a
 sustained multi-day effort - consistent with the assignment's "two focused
 days, hackathon style" framing when the actual coding time (as opposed to
 elapsed calendar time across sessions) is counted.
@@ -556,6 +658,18 @@ claim in this file was re-checked by actually running the current code, not
 carried forward from a previous session's notes on the assumption that it
 still held.
 
+Once more, in this final product-improvement pass, for: inspecting the
+actual current application (UI, schema, repo, server actions, tests,
+NOTES.md, README.md, the assignment PDF) before proposing anything;
+evaluating Add Section against the alternatives using the given criteria
+rather than defaulting to it; implementing only that one feature
+end-to-end (repo function, Server Action, UI, tests); re-running the full
+existing baseline (import, edit, duplicate, delete, photo preservation,
+failure handling) to confirm nothing regressed, before and after the
+change; and verifying the new feature itself the same way - locally and
+against the live production deployment, cleaning up every piece of test
+data created along the way.
+
 ## Important architectural decisions
 
 See DECISIONS.md for the full reasoning behind each one (deterministic
@@ -594,6 +708,14 @@ assumptions that would need to be undone.
 7. Fix `rel`/`target` not actually being added to preserved comment links
    (see "Formatting, links, and rich content" above) - found during final
    QA, not a security issue, left as-is.
+8. **Add Item, Add Comment, and a from-scratch "New Template" creator.**
+   Evaluated alongside Add Section and rejected for this pass specifically
+   - see "Editor extension: Add section" for why each raises questions
+   (default comment type/answer type, or building a whole authoring
+   surface unrelated to migration) that Add Section doesn't.
+9. **Per-section delete.** Only whole-template delete was built; removing
+   one section (including a manually-added one) requires deleting and
+   recreating the template, or simply not adding it in the first place.
 
 **Resolved since it was first noticed**: the editor previously collapsed
 every open section/item back to closed after each individual field save.
@@ -627,6 +749,14 @@ which ones are unrelated speculation:
 - **Drag-and-drop section/item reordering.** The `position` columns
   already carry the ordering; only the UI to change it via drag-and-drop
   (rather than only via the source import order) is missing.
+- **Add Item / Add Comment**, extending the same pattern Add Section
+  established. The natural next step once there's a real answer for what
+  a newly-created comment's type/answer-type/severity should default to -
+  deliberately not answered in this pass (see "Editor extension: Add
+  section").
+- **Per-section delete**, so a section added by mistake (or one the
+  inspector decides they don't want) doesn't require deleting the whole
+  template.
 - **Editable answer type / multiple-choice options / severity /
   recommendation.** Currently read-only display fields (see "What was
   intentionally NOT built").
@@ -719,6 +849,69 @@ anything unfamiliar as safe to drop. The generalization test (a second,
 different real export producing correct results with zero import-side
 code changes) is the concrete evidence that this is genuinely solving the
 stated problem, not just working for the one file it was built against.
+
+## Quick reference
+
+Short, direct answers to specific questions this project has been asked
+about repeatedly, each pointing to the section with the full explanation.
+
+1. **How does editing work?** Each field (section/item/comment name,
+   comment text) is its own component that saves itself via a Server
+   Action the moment it loses focus - see "Editing and the Save workflow."
+2. **How does Save work?** There's no separate bulk-save; a page-level
+   status bar aggregates each field's state and "Save & Back to Templates"
+   makes sure a still-focused edit fires before navigating away - same
+   section.
+3. **How does persistence work?** Real Postgres via Drizzle ORM, one
+   `UPDATE`/`INSERT` per action, verified via fresh database reads (not
+   in-memory echoes) after every kind of edit - see "Data model" and "How
+   preservation was checked."
+4. **How does duplication work?** `duplicateTemplate()` deep-copies every
+   section/item/comment with new IDs in one transaction - see `src/db/repo.ts`
+   and the "Template deletion"-adjacent duplication tests in `repo.test.ts`.
+5. **How does independent editing of a copy work?** The copy shares no
+   row IDs with the original, so any edit only ever touches the copy's own
+   rows - verified directly via database reads after editing a copy, both
+   locally and in production, multiple times across passes.
+6. **How are images/photo URLs handled?** Captured per row into
+   `sourceMetadata.photos`, restricted to http/https, shown as a clickable
+   "Imported photo" chip - see "Photo/image preservation."
+7. **How is formatting handled?** An allowlist of tags preserved
+   (`<p>`, `<a>`, `<strong>`, lists, etc.), everything else stripped and
+   reported - see "Formatting, links, and rich content."
+8. **How are links handled?** `http`/`https`/`mailto` preserved and
+   rendered as real, clickable `<a>` tags; other schemes downgraded and
+   flagged - same section (also notes a known, non-security `rel`/`target`
+   cosmetic gap).
+9. **What rich content is unsupported?** Tables, images embedded in
+   comment HTML, embedded video, custom styling/classes - same section.
+10. **Missing from the export vs. unsupported by us?** Explicitly tracked
+    as two different things - see "Missing-from-export vs.
+    unsupported-by-importer," with the YouTube-embed-wrapper as the
+    concrete real example of "missing," and unsafe link schemes as the
+    concrete example of "unsupported."
+11. **How did we test preservation?** Automated fixture test against the
+    real committed export, an automated DB round-trip test, and repeated
+    manual verification locally and in production - see "How preservation
+    was checked."
+12. **How did we test a second Spectora export?** Ran the real ASHI
+    export through the actual app (not just synthetic unit tests) and
+    confirmed 12 sections / 62 items / 355 comments with zero warnings -
+    see "Generalization test."
+13. **How did we test failure cases?** Uploaded a corrupted file and a
+    file missing required columns, confirmed clear errors and zero partial
+    data via direct database checks - see "Failure cases (demonstrated)."
+14. **Most valuable feature?** The faithful, structured, deterministic
+    import pipeline - see "Most valuable feature" above.
+15. **The one customer-focused improvement?** Import trust
+    (preview-before-commit + granular warnings + a persistent audit
+    record) - see "Customer-focused improvement (the one we chose)." (Add
+    Section, covered separately under "Editor extension: Add section," is
+    a different, smaller scope decision from a later pass - not a
+    replacement for this answer.)
+16. **Approximate time spent?** Low-to-mid single-digit hours across four
+    passes, reconstructed from git history and scope, not tracked
+    precisely - see "Approximate time spent."
 
 ## Hive product feedback
 
