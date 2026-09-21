@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AlertIcon, CheckIcon, SpinnerIcon } from "@/app/_components/icons";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -58,12 +59,24 @@ export function EditableField({
         }}
         className={
           className ??
-          "bg-transparent border-b border-dashed border-transparent hover:border-neutral-300 focus:border-neutral-500 focus:outline-none"
+          "bg-transparent border-b border-dashed border-transparent hover:border-gray-300 focus:border-blue-400 focus:outline-none"
         }
       />
-      {state === "saving" && <span className="text-xs text-neutral-400">Saving...</span>}
-      {state === "saved" && <span className="text-xs text-green-600">Saved</span>}
-      {state === "error" && <span className="text-xs text-red-600" title={errorMessage}>Save failed</span>}
+      {state === "saving" && (
+        <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+          <SpinnerIcon /> Saving
+        </span>
+      )}
+      {state === "saved" && (
+        <span className="inline-flex items-center gap-1 text-xs text-green-600">
+          <CheckIcon /> Saved
+        </span>
+      )}
+      {state === "error" && (
+        <span className="inline-flex items-center gap-1 text-xs text-red-600" title={errorMessage}>
+          <AlertIcon /> Save failed
+        </span>
+      )}
     </span>
   );
 }

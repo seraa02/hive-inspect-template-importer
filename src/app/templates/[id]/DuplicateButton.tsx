@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { duplicateTemplateAction } from "@/app/actions";
+import { CopyIcon, SpinnerIcon } from "@/app/_components/icons";
 
 export function DuplicateButton({ templateId }: { templateId: string }) {
   const [isPending, startTransition] = useTransition();
@@ -11,9 +12,10 @@ export function DuplicateButton({ templateId }: { templateId: string }) {
       type="button"
       disabled={isPending}
       onClick={() => startTransition(() => duplicateTemplateAction(templateId))}
-      className="text-sm font-medium border border-neutral-300 rounded-md px-3 py-1.5 hover:bg-neutral-100 disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 border border-blue-200 bg-blue-50 rounded-lg px-3 py-1.5 hover:bg-blue-100 transition-colors disabled:opacity-50"
     >
-      {isPending ? "Duplicating..." : "Duplicate template"}
+      {isPending ? <SpinnerIcon /> : <CopyIcon />}
+      {isPending ? "Duplicating..." : "Duplicate"}
     </button>
   );
 }

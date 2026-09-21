@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import "./globals.css";
+import { Sidebar } from "./_components/Sidebar";
+import { TopBar } from "./_components/TopBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,24 +25,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900">
-        <header className="border-b border-neutral-200 bg-white">
-          <div className="mx-auto max-w-5xl px-6 py-4 flex items-center justify-between">
-            <Link href="/" className="font-semibold tracking-tight text-lg">
-              Hive Inspect <span className="text-neutral-400 font-normal">/ Template Importer</span>
-            </Link>
-            <Link
-              href="/import"
-              className="text-sm font-medium bg-neutral-900 text-white px-3 py-1.5 rounded-md hover:bg-neutral-700"
-            >
-              Import Spectora template
-            </Link>
+      <body className="min-h-full bg-gray-50 text-gray-900">
+        <div className="flex min-h-screen">
+          <Sidebar />
+          <div className="flex-1 flex flex-col min-w-0">
+            <TopBar />
+            <main className="flex-1 w-full max-w-5xl px-5 md:px-8 py-8">{children}</main>
           </div>
-        </header>
-        <main className="flex-1 mx-auto max-w-5xl w-full px-6 py-8">{children}</main>
-        <footer className="border-t border-neutral-200 py-4 text-center text-xs text-neutral-400">
-          Forward Deployed Engineer take-home &middot; Template migration workflow
-        </footer>
+        </div>
       </body>
     </html>
   );
