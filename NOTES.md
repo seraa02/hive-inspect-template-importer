@@ -1,26 +1,67 @@
 # NOTES
 
+## The customer problem
+
+An inspection company has spent years - the assignment says four - tuning
+a Spectora template: the exact sections, items, and wording their
+inspectors use on every job. Moving to new software is a non-starter if it
+means retyping all of that by hand. The customer problem this project
+solves is narrow and concrete: take that company's actual Spectora export,
+bring it into a new system without losing or silently rewriting anything,
+and let an inspector pick up editing it immediately - including making a
+copy to adapt for a different property type without touching the
+original. Trust is the product here more than any single feature: an
+inspector who can't tell whether their template survived the move intact
+won't switch, regardless of how good the rest of the software is.
+
 ## What was built
+
+The full workflow, end to end:
+
+```
+Spectora "Export HTML Text" spreadsheet (.xls/.xlsx)
+  -> upload
+  -> validate + parse into a structured, in-memory template (nothing written yet)
+  -> preview (counts + warnings) shown to the user for confirmation
+  -> commit: one DB transaction creates templates/sections/items/comments
+  -> editor: section names, item names, comment names, and comment text
+     are all independently editable, each field saving itself the moment
+     it loses focus
+  -> Save & Back / Back to Templates: a page-level status bar makes it
+     clear whether anything is still unsaved before returning to the list
+  -> duplicate: a full, independent deep copy the user can then edit
+     without ever touching the original
+  -> delete: a confirmed, permanent removal for template housekeeping
+  -> retrieval: closing the app, reopening it, or reloading the browser
+     shows exactly what was last saved, for the original and every copy
+```
 
 - A generic parser for Spectora's "Export HTML Text" spreadsheet format
   (`src/lib/importer/`), driven entirely by column headers rather than
   positions, template names, or row counts - it works on the committed
-  InterNACHI Residential export and should work on any other export in the
-  same format.
+  InterNACHI Residential export and was confirmed to work on a second,
+  different real export too (see "Generalization test").
 - A structured, editable data model: `templates -> sections -> items ->
   comments`, each with an explicit `position` column for ordering. Comment
   HTML is stored as sanitized HTML in a text column, not folded into one
   opaque blob.
 - A three-step import pipeline: validate -> parse -> **preview** (nothing
   written yet) -> commit (one DB transaction).
-- An editor: section names, item names, and comment text are all editable
-  and persist to Postgres. Other per-comment fields from the export (answer
-  type, multiple-choice options, severity, recommendation) are shown
-  read-only, preserved losslessly, not yet editable (see "What was cut").
+- An editor: section names, item names, comment names, and comment text
+  are all editable and persist to Postgres, each field saving itself
+  independently on blur (see "Editing and the Save workflow" for the full
+  explanation of how this behaves and what was added around it). Other
+  per-comment fields from the export (answer type, multiple-choice
+  options, severity, recommendation) are shown read-only, preserved
+  losslessly, not yet editable (see "What was intentionally cut, and why").
 - Template duplication: a full deep copy (new IDs throughout) in one
-  transaction, verified independent of the original by an automated test.
+  transaction, verified independent of the original by an automated test
+  and by repeated manual testing, locally and in production.
 - Template deletion: a simple, confirmed, permanent delete (see "Template
   deletion" below for why this and not a recycle bin).
+- Photo/image URL preservation: `Default Photo 1-10` and their captions
+  are captured per row, not just flagged as an unrecognized column (see
+  "Photo/image preservation").
 - A failure case: uploading a corrupted file or a workbook missing the
   required columns produces a clear, specific error and writes nothing to
   the database (verified both manually and by a rolled-back-transaction
@@ -53,6 +94,78 @@
 - **Auth / multi-user.** Out of scope per the assignment (no login
   requirement stated); the app has no auth layer. This is a take-home demo,
   not a multi-tenant product.
+
+## Technical stack
+
+The actual stack, not a wishlist:
+
+- **Frontend**: Next.js 16 (App Router) + React 19 + TypeScript. Server
+  Components render the template list and editor; a handful of small
+  Client Components (`EditableField`, `CommentCard`, `Accordion`,
+  `DuplicateButton`, `DeleteTemplateButton`, the editor status bar) handle
+  the interactive parts. Tailwind CSS v4 for styling.
+- **Backend**: Next.js Server Actions (`src/app/actions.ts`) - no separate
+  REST/API layer. Each mutation (import, edit, duplicate, delete) is a
+  single typed server function called directly from the UI.
+- **Database**: PostgreSQL. Supabase-hosted in production; any Postgres
+  works for local development (see README).
+- **ORM/data access**: Drizzle ORM (`drizzle-orm`, `drizzle-kit`) with the
+  `postgres` driver. Migrations are plain SQL files checked into `drizzle/`.
+- **Deployment**: Vercel, deployed from the project root with no custom
+  build configuration beyond the standard Next.js build.
+- **Import/parsing**: `exceljs` reads the uploaded workbook into a plain
+  row/column grid (chosen over `xlsx`/SheetJS, which has open, unpatched
+  security advisories - see DECISIONS.md).
+- **Sanitization**: `sanitize-html` allowlist-sanitizes comment HTML, run
+  on both import and every edit. `he` decodes HTML entities in plain-text
+  name fields.
+- **Testing**: Vitest for both the parser unit tests (no database) and the
+  Postgres integration tests.
+
+## Data model
+
+`templates -> sections -> items -> comments`, each a real table with a
+foreign key to its parent (cascading on delete) and an explicit integer
+`position` column for ordering:
+
+- **templates**: id, name, description, source format/filename, timestamps.
+- **sections**: id, template_id, name, position.
+- **items**: id, section_id, name, position.
+- **comments**: id, item_id, name, position, plus dedicated typed columns
+  for the fields the editor and preview actually use directly
+  (`text_html`, `comment_type`, `severity`, `answer_type`,
+  `multiple_choice_options`, `unit_type_options`, `recommendation`,
+  `default_value`), and one `source_metadata jsonb` catch-all for
+  low-signal export fields (see "Import mapping" and "Photo/image
+  preservation").
+- **imports**: one row per import attempt (committed or failed), recording
+  counts and warnings so they're visible after the fact, not just at
+  import time.
+
+This is structured and editable on purpose, per the assignment's explicit
+requirement that a whole template stored as one opaque HTML blob is not
+acceptable (HTML inside an individual comment field is fine, and that's
+exactly where it lives - in `comments.text_html`, sanitized). Because
+sections/items/comments are real rows with real relationships, editing a
+name is a one-column `UPDATE`, and duplicating a template is a
+straightforward deep copy across three tables with new IDs - neither would
+be sensible operations against a single JSON/HTML blob.
+
+## Import mapping
+
+`src/lib/importer/headers.ts` maps each canonical field (Section Name, Item
+Name, Comment Name, Comment Text, Comment Type, Category, etc.) to whichever
+column in the uploaded sheet has that header text, normalized (case,
+whitespace, and the human-readable parenthetical hint stripped) - not by
+column position. `src/lib/importer/mapRows.ts` then walks the data rows in
+order: a `(Section Name, Item Name)` pair is grouped into the same
+section/item wherever it recurs in the sheet (items are unique within their
+section, not globally - see "Actual structure found in the committed
+export"), each row becomes one comment, and `position` is assigned from the
+row's position in the sheet, not the export's own `Order` column (see
+DECISIONS.md for why). Anything in the header row that isn't a recognized
+canonical column is preserved as a named warning rather than silently
+ignored.
 
 ## Supported input format
 
@@ -251,6 +364,18 @@ These are tracked as two different kinds of warnings on purpose:
   real production database, then the test data created for those checks was
   deleted again, leaving production with only the intended single seeded
   template.
+- In a later pass (Save workflow + accordion fix): re-verified, not
+  assumed, that nothing above regressed - reran the full automated suite,
+  reimported both real exports fresh (same 13/69/392 and 12/62/355), and
+  specifically confirmed via the DOM (both locally and in production) that
+  opening a section and a nested item, then triggering a real save,
+  left both still open, where before the fix they would have closed. Also
+  exercised the new status bar directly: confirmed it shows "Unsaved
+  changes" the moment a field is edited but not yet blurred, "All changes
+  saved" immediately after, and that clicking "Save & Back to Templates"
+  with a field still focused and dirty actually persists that edit (via a
+  direct database read) before navigating away - not just after enough
+  time happened to pass.
 
 ## Failure cases (demonstrated)
 
@@ -266,6 +391,67 @@ Both are enforced server-side (not just client-side validation) and both
 leave the database exactly as it was before the attempt - verified by an
 automated test that intentionally trips a NOT NULL constraint mid-
 transaction and asserts the transaction rolled back completely.
+
+## Editing and the Save workflow
+
+**How it actually works.** Every editable field (section name, item name,
+comment name, comment text) is its own small Client Component holding its
+own value and save state. There is no explicit "Save" step underneath -
+each field calls its own Server Action the moment it loses focus (on Tab,
+click-away, or Enter) and shows its own Saving/Saved/error indicator. There
+was never a client-side draft or transaction: what you see saved is what's
+in Postgres, field by field, as you go. The risk this carries is genuine
+but narrow: a field that has been typed into but not yet blurred - closing
+the tab or losing power mid-edit before that blur fires - loses that one
+field's edit, since nothing is sent to the server until then. Once a field
+blurs, its write is a normal, already-persisted database update; navigating
+away after that changes nothing.
+
+**What was added, and why.** With 12+ sections and hundreds of comments,
+that per-field model felt directionless - there was no way to tell "am I
+done here" or get back to the template list with any confidence, and
+`revalidatePath` (called after every single save so the page reflects the
+new value) was rebuilding the whole page's DOM, which silently closed every
+open section/item on every keystroke's blur. Two small, additive pieces
+were built around the existing model, without changing how or when
+anything is actually written:
+
+1. **A page-level status bar** (`EditorStatusBar.tsx` / `EditorStatusContext.tsx`).
+   Each field reports "dirty" (typed, not yet saved), "saving", or
+   "error" into a shared context; the bar shows one honest answer -
+   "All changes saved," "Unsaved changes," "Saving...," or "Some changes
+   failed to save" - instead of the user having to scan dozens of
+   individual field indicators. It also gives two clear ways back to the
+   template list: a plain **Back to Templates** link, and **Save & Back to
+   Templates**, which blurs whatever's currently focused (so a pending
+   edit fires its own save right now, exactly as it would on Tab) and then
+   navigates once nothing is left in flight. Neither button introduces a
+   new write path - "Save" here means "make sure the per-field saves
+   you'd already trigger by clicking away have actually happened," not a
+   new bulk-save mechanism. Clicking either with no pending edits performs
+   zero additional writes.
+2. **The accordion-collapse fix.** The reported issue was real: because
+   `<details open>` is native, uncontrolled browser state and the page is
+   a Server Component that fully re-executes on every `revalidatePath`,
+   the open/closed state of every section and item was lost on every
+   single save. The fix was small and contained: `Accordion.tsx` wraps
+   `<details>` in a Client Component that controls `open` via its own
+   `useState`, updated through the native `toggle` event. A Client
+   Component's hook state survives a surrounding Server Component
+   re-executing around it (React preserves it by matching component type
+   and key, independent of the server-rendered markup being rebuilt), so
+   a section or item stays exactly as open or closed as the user left it
+   through any number of saves. This was verified directly, not assumed:
+   opening a section and a nested item, editing a comment inside it
+   (triggering the real save + revalidate path), and confirming via the
+   DOM that both remained open - done both locally and against the live
+   production deployment.
+
+**What this deliberately did not become.** No draft/versioning system, no
+"unsaved changes" browser-navigation guard (`beforeunload`), no batched
+transactional save across multiple fields. The persistence model - each
+field commits itself independently - is unchanged; everything above is a
+UI layer that makes the existing behavior legible, not a new one.
 
 ## Template deletion
 
@@ -295,12 +481,26 @@ build.
 
 ## Approximate time spent
 
-Roughly one focused session for the baseline build: source-file inspection
-and format discovery, scaffolding, importer + tests, persistence + editor +
-duplication, browser-driven end-to-end verification, and documentation.
-Plus a shorter follow-up session for final QA and delivery prep: a full
-requirements audit against the assignment PDF, the photo-preservation fix,
-the delete feature, production database cleanup, and this update.
+This is an estimate reconstructed from the git history and the scope of
+each pass, not a tracked number - treat it as an order-of-magnitude range,
+not a precise figure.
+
+- **Baseline build** (one focused session): source-file inspection and
+  format discovery, scaffolding, importer + tests, persistence + editor +
+  duplication, browser-driven end-to-end verification, and documentation.
+- **First QA/delivery-prep pass** (shorter follow-up session): a full
+  requirements audit against the assignment PDF, the photo-preservation
+  fix, the delete feature, production database cleanup, and a NOTES.md
+  update.
+- **This pass** (final implementation pass): the Save-workflow status bar,
+  the accordion-collapse fix, re-verification of the photo/delete/rich-
+  content behavior after those UI changes (locally and in production), a
+  further production cleanup, and this documentation update.
+
+Altogether, low-to-mid single-digit hours across the three passes, not a
+sustained multi-day effort - consistent with the assignment's "two focused
+days, hackathon style" framing when the actual coding time (as opposed to
+elapsed calendar time across sessions) is counted.
 
 ## Production seed
 
@@ -345,6 +545,17 @@ same end-to-end browser verification both locally and against the live
 production deployment, and cleaning up test data from the production
 database via the newly-added delete feature.
 
+And again, in this final implementation pass, for: inspecting the actual
+current edit/save code (not assuming the earlier documentation of it was
+still accurate) before changing anything, implementing the editor status
+bar and the accordion-collapse fix, re-verifying photo preservation, rich
+content, duplication, and delete behavior directly via a real browser
+against both the local app and the live production deployment rather than
+by re-reading code, and writing this update. Every count and behavior
+claim in this file was re-checked by actually running the current code, not
+carried forward from a previous session's notes on the assumption that it
+still held.
+
 ## Important architectural decisions
 
 See DECISIONS.md for the full reasoning behind each one (deterministic
@@ -365,7 +576,7 @@ touching the existing tables, and `companies` / `inspectors` /
 current schema encodes "this app only ever has one company" or similar
 assumptions that would need to be undone.
 
-## What would be built next with more time
+## What was intentionally NOT built (this pass)
 
 1. Editable multiple-choice options and answer type in the editor.
 2. A real rich-text (WYSIWYG) editor for comment text, since the plain-
@@ -375,13 +586,139 @@ assumptions that would need to be undone.
    assignment.
 4. Bulk operations (reorder sections/items via drag-and-drop; the
    `position` columns already support this, only the UI is missing).
-5. Fix `rel`/`target` not actually being added to preserved comment links
+5. A 30-day recycle bin for deleted templates - see "Template deletion."
+6. A `beforeunload` warning or client-side draft/versioning system around
+   editing - see "Editing and the Save workflow" for why the existing
+   per-field autosave model was extended with a status bar instead of
+   replaced with something heavier.
+7. Fix `rel`/`target` not actually being added to preserved comment links
    (see "Formatting, links, and rich content" above) - found during final
-   QA, not a security issue, left as-is for this delivery round.
-6. The editor collapses every open section/item back to closed after each
-   individual save (a `revalidatePath` side effect) - noticed during final
-   QA. Not a data-loss issue and not a blocking assignment requirement, but
-   a real friction point when editing several fields in a large template.
+   QA, not a security issue, left as-is.
+
+**Resolved since it was first noticed**: the editor previously collapsed
+every open section/item back to closed after each individual field save.
+This was fixed (see "Editing and the Save workflow") rather than left as a
+known limitation, once it turned out to be a small, low-risk, well-scoped
+change (a Client Component controlling `<details open>` via its own
+`useState`) rather than a deeper architectural problem.
+
+## Potential future extensions
+
+Not built, not planned for this delivery - listed because a real product
+team would eventually face these, and it's worth being explicit about
+which ones this project's actual shape makes reasonable next steps versus
+which ones are unrelated speculation:
+
+- **Template version history / restore a previous version.** The current
+  schema overwrites a field's value on every edit with no history. The
+  `imports` table already shows the shape this could take (one row per
+  significant event); a similar append-only table per field-level edit
+  would be the natural extension, without changing the live schema.
+- **30-day recycle bin for deleted templates.** Deliberately not built
+  now (see "Template deletion"); would matter if this app ever handled a
+  customer's only copy of a template rather than something re-importable
+  from the original Spectora export.
+- **Richer photo/media handling.** Right now a `Default Photo N` value is
+  a preserved URL with a best-effort thumbnail. A production version might
+  proxy/cache these images server-side so they don't depend on the
+  original CDN staying up or allowing hotlinking, and would need a real
+  answer for what happens when Spectora eventually starts including actual
+  photo binaries rather than just URLs.
+- **Drag-and-drop section/item reordering.** The `position` columns
+  already carry the ordering; only the UI to change it via drag-and-drop
+  (rather than only via the source import order) is missing.
+- **Editable answer type / multiple-choice options / severity /
+  recommendation.** Currently read-only display fields (see "What was
+  intentionally NOT built").
+- **A full WYSIWYG editor for comment text**, replacing the current
+  HTML-textarea-plus-preview, once/if the customer's real content uses
+  more formatting variety than the current export does.
+- **Import conflict resolution / re-import into an existing template.**
+  Today, importing again always creates a new template; there's no path
+  for "re-sync this template against an updated Spectora export" without
+  hand-reconciling the two afterward.
+- **User authentication and per-organization templates.** This is
+  explicitly out of scope for the assignment and the app has no auth
+  layer at all; a real multi-customer product would need this before any
+  of the above matters.
+- **Background processing for very large imports.** The current import
+  runs synchronously inside one request/transaction; this is fine at the
+  ~400-row scale of the real exports tested here, but a template with
+  tens of thousands of rows (or many photo columns needing server-side
+  fetching, per the point above) would eventually want to move off the
+  request/response cycle.
+
+Deliberately not listed: things like role/permission systems, batch
+imports of many files at once, or template comparison/diff tooling - none
+of these follow directly from what this project actually does today, and
+listing them would be speculation rather than a real extension of the
+current design.
+
+## Customer-focused improvement (the one we chose)
+
+**What it is**: import trust - the combination of preview-before-commit
+(nothing is written to the database until the user explicitly confirms
+what they're about to get), granular, per-row/per-comment warnings (not
+one generic "some things were skipped" message), and a persistent
+`imports` record so those warnings remain visible after the user has
+navigated away and come back.
+
+**Customer problem it solves**: an inspector migrating four years of tuned
+template content has no way to verify, on their own, that a new system
+actually understood their file correctly. Silence read as success is
+exactly what erodes trust the moment they later discover something was
+wrong.
+
+**Why it matters more than alternatives**: a nicer editor or WYSIWYG
+support would improve day-two usability, but it doesn't touch the
+moment that actually determines whether this customer keeps trusting the
+migration - the instant they hit import. Getting that moment right (show
+exactly what will happen, let them back out before anything is written,
+never bury a real problem in silence) is the highest-leverage place to
+spend effort for a customer whose entire objection to switching is "will
+I lose anything."
+
+**How it works technically**: `previewImportAction` (`src/app/actions.ts`)
+runs the full parse pipeline and returns stats + a warnings list without
+calling `commitImport` - nothing touches the database. Warnings are typed
+(`ImportWarning`) with an optional row/section/item/comment reference, not
+free text, so the UI can show exactly what was affected. On commit, the
+same warnings are persisted into the `imports` table alongside the
+resulting `templateId`, so they're visible again later on the template
+page ("Imported with N warnings...") - not just in the one-time preview
+screen.
+
+**How it was validated**: `mapRows.test.ts` has dedicated cases for each
+warning type (unsupported HTML, unsafe link scheme, non-numeric category,
+duplicate comment name, unrecognized column, unsafe photo URL scheme);
+manually, by uploading both real exports and confirming the preview
+counts/warnings matched what direct inspection of the source files found
+(see NOTES.md throughout); and by confirming, via the database, that a
+preview never creates rows and a failed import never leaves a partial
+template.
+
+## Most valuable feature
+
+**Faithful, structured import** - the deterministic, header-driven parser
+that turns a Spectora spreadsheet into `templates -> sections -> items ->
+comments` correctly and repeatably. Not the editor, not the UI polish, not
+the Save-workflow status bar added in this pass.
+
+**Why this and not something else**: everything else in the app is only
+valuable if this step is trustworthy. Editing is worthless if what got
+imported doesn't match the source. Duplication is worthless if the thing
+being duplicated is already wrong. The customer's actual ask, in the
+assignment's own words, is "preserving that work matters more than
+originality" - and the piece of this project that carries that
+responsibility, end to end, is the import pipeline: header-driven column
+resolution that doesn't assume one fixed layout, deterministic mapping
+that produces the same structure every time (no model, no guessing),
+explicit preservation of hierarchy and ordering, and now per-row capture of
+even low-signal fields like Default Photo URLs rather than treating
+anything unfamiliar as safe to drop. The generalization test (a second,
+different real export producing correct results with zero import-side
+code changes) is the concrete evidence that this is genuinely solving the
+stated problem, not just working for the one file it was built against.
 
 ## Hive product feedback
 

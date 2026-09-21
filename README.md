@@ -27,7 +27,10 @@ Upload (.xls/.xlsx)
   -> on confirm: one DB transaction creates template/sections/items/comments
      + an `imports` row recording warnings and counts (src/db/repo.ts)
   -> editor: section/item/comment name + comment text are editable,
-     each edit re-sanitized and saved via a Server Action
+     each edit re-sanitized and saved via a Server Action on blur
+  -> editor status bar: aggregates per-field save state into one
+     "All changes saved" / "Saving..." / "Unsaved changes" answer, with
+     Back to Templates / Save & Back to Templates navigation
   -> duplicate: deep-copies the whole hierarchy with new IDs in one transaction
   -> delete: confirmed, permanent, cascades to sections/items/comments
 ```
@@ -164,6 +167,17 @@ Live URL: https://hive-inspect-template-importer-ten.vercel.app
    warnings before anything is written to the database.
 3. Click **Import template** to commit it. You're redirected to the new
    template's editor.
+
+## Editing a template
+
+Section names, item names, comment names, and comment text are all
+editable directly in the tree - each field saves itself the moment you
+click away (no separate Save button per field). The sticky bar at the top
+of the editor shows whether everything is currently saved and gives two
+ways back to the template list: **Back to Templates**, or **Save & Back to
+Templates** (which makes sure whatever you were just editing has been
+saved before navigating away). See NOTES.md ("Editing and the Save
+workflow") for exactly how this behaves.
 
 ## Deleting a template
 

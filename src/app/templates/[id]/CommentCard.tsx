@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { EditableField } from "./EditableField";
+import { useEditorStatus } from "./EditorStatusContext";
 import { updateCommentAction } from "@/app/actions";
 import { AlertIcon, CheckIcon, ImageIcon, SpinnerIcon } from "@/app/_components/icons";
 
@@ -50,16 +51,21 @@ export function CommentCard({ templateId, comment }: { templateId: string; comme
   const [text, setText] = useState(comment.textHtml ?? "");
   const [state, setState] = useState<SaveState>("idle");
   const [showPreview, setShowPreview] = useState(true);
+  const { reportStatus } = useEditorStatus();
+  const textFieldId = `comment-text-${comment.id}`;
 
   async function saveText() {
     if (text === (comment.textHtml ?? "")) return;
     setState("saving");
+    reportStatus(textFieldId, "saving");
     try {
       await updateCommentAction(templateId, comment.id, { textHtml: text });
       setState("saved");
+      reportStatus(textFieldId, "idle");
       setTimeout(() => setState((s) => (s === "saved" ? "idle" : s)), 1500);
     } catch {
       setState("error");
+      reportStatus(textFieldId, "error");
     }
   }
 
@@ -71,6 +77,7 @@ export function CommentCard({ templateId, comment }: { templateId: string; comme
         <EditableField
           initialValue={comment.name}
           ariaLabel={`Comment name: ${comment.name}`}
+          fieldId={`comment-name-${comment.id}`}
           className="font-medium text-sm bg-transparent border-b border-dashed border-transparent hover:border-gray-300 focus:border-blue-400 focus:outline-none"
           onSave={(name) => updateCommentAction(templateId, comment.id, { name })}
         />
@@ -99,7 +106,10 @@ export function CommentCard({ templateId, comment }: { templateId: string; comme
       <div className="mt-2.5 grid gap-2" style={{ gridTemplateColumns: showPreview ? "1fr 1fr" : "1fr" }}>
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            reportStatus(textFieldId, e.target.value !== (comment.textHtml ?? "") ? "dirty" : "idle");
+          }}
           onBlur={saveText}
           rows={3}
           placeholder="(no comment text)"

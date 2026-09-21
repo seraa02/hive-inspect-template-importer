@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AlertIcon, CheckIcon, SpinnerIcon } from "@/app/_components/icons";
+import { useEditorStatus } from "./EditorStatusContext";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -10,35 +11,47 @@ type SaveState = "idle" | "saving" | "saved" | "error";
  * Saves on blur or Enter; shows a lightweight status so the user always
  * knows whether their change actually persisted, per the assignment's
  * requirement for clear save/success/error states (no silent failures).
+ *
+ * `fieldId`, when provided, reports this field's dirty/saving/error state
+ * up to the page-level EditorStatusProvider so the editor's status bar can
+ * show one aggregate answer - purely a UI aggregation, the actual save
+ * still happens right here, unchanged.
  */
 export function EditableField({
   initialValue,
   onSave,
   className,
   ariaLabel,
+  fieldId,
 }: {
   initialValue: string;
   onSave: (value: string) => Promise<void>;
   className?: string;
   ariaLabel: string;
+  fieldId?: string;
 }) {
   const [value, setValue] = useState(initialValue);
   const [state, setState] = useState<SaveState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const { reportStatus } = useEditorStatus();
 
   async function commit() {
     const trimmed = value.trim();
     if (trimmed === initialValue.trim() || trimmed === "") {
       setValue(initialValue);
+      if (fieldId) reportStatus(fieldId, "idle");
       return;
     }
     setState("saving");
+    if (fieldId) reportStatus(fieldId, "saving");
     try {
       await onSave(trimmed);
       setState("saved");
+      if (fieldId) reportStatus(fieldId, "idle");
       setTimeout(() => setState((s) => (s === "saved" ? "idle" : s)), 1500);
     } catch (err) {
       setState("error");
+      if (fieldId) reportStatus(fieldId, "error");
       setErrorMessage(err instanceof Error ? err.message : "Save failed.");
     }
   }
@@ -49,7 +62,12 @@ export function EditableField({
         aria-label={ariaLabel}
         value={value}
         onClick={(e) => e.stopPropagation()}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          if (fieldId) {
+            reportStatus(fieldId, e.target.value.trim() !== initialValue.trim() ? "dirty" : "idle");
+          }
+        }}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
