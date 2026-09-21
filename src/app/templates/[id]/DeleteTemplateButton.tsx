@@ -5,13 +5,6 @@ import { unstable_rethrow } from "next/navigation";
 import { deleteTemplateAction } from "@/app/actions";
 import { AlertIcon, SpinnerIcon, TrashIcon } from "@/app/_components/icons";
 
-/**
- * Simple confirmed permanent delete - no recycle bin. The assignment does
- * not require deletion at all; this exists so stray/duplicate templates
- * (from testing, or from an inspector who imported the wrong file) can be
- * cleaned up without touching the database directly. See NOTES.md for why
- * a soft-delete/recycle-bin was deliberately not built.
- */
 export function DeleteTemplateButton({
   templateId,
   templateName,
@@ -29,10 +22,7 @@ export function DeleteTemplateButton({
       try {
         await deleteTemplateAction(templateId);
       } catch (err) {
-        // deleteTemplateAction ends in redirect("/"), which Next.js
-        // implements by throwing a control-flow error - let that
-        // propagate so the redirect actually happens. Anything else is a
-        // genuine failure: show a generic message, never the raw error.
+        // redirect() throws a control-flow error internally - let it propagate.
         unstable_rethrow(err);
         setError("Could not delete this template. Please try again.");
       }

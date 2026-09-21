@@ -6,22 +6,13 @@ import Link from "next/link";
 import { useEditorStatus } from "./EditorStatusContext";
 import { AlertIcon, CheckIcon, SpinnerIcon } from "@/app/_components/icons";
 
-/**
- * Every field on this page already saves itself the moment it loses focus
- * (see EditableField.tsx / CommentCard.tsx) - there is no separate draft or
- * transaction here, and this bar does not introduce one. It exists purely
- * so the user has one clear, page-level answer to "is my work saved?" and
- * one clear way back to the template list, instead of having to scan
- * dozens of individual per-field indicators or rely on the sidebar alone.
- */
 export function EditorStatusBar() {
   const { hasUnsavedChanges, isSaving, hasError, hasPendingWork } = useEditorStatus();
   const [isReturning, setIsReturning] = useState(false);
   const router = useRouter();
 
   function saveAndReturn() {
-    // Blur whatever's focused so an edit that hasn't lost focus yet fires
-    // its own save now, same as it would on Tab/click-away.
+    // Blur whatever's focused so a pending edit fires its save now.
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
@@ -34,8 +25,6 @@ export function EditorStatusBar() {
       }
       setTimeout(check, 100);
     };
-    // Give the just-fired blur a tick to register as "saving" before the
-    // first check, so a real in-flight save isn't missed.
     setTimeout(check, 50);
   }
 

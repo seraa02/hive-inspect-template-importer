@@ -1,18 +1,8 @@
-// Env vars are loaded via `node --env-file` in the npm script (see
-// package.json) - that runs before any module code, avoiding ESM import-
-// hoisting issues that would otherwise load src/db/client.ts (which reads
-// process.env at module scope) before dotenv had a chance to run.
 import { readFileSync, readdirSync } from "fs";
 import path from "path";
 import { importSpectoraExport } from "../src/lib/importer";
 import { commitImport, listTemplates } from "../src/db/repo";
 
-/**
- * Seeds the database with the committed Spectora export, so a freshly
- * deployed app opens with a real, already-imported template instead of an
- * empty state. Safe to re-run: it skips seeding if any template already
- * exists.
- */
 async function main() {
   const existing = await listTemplates();
   if (existing.length > 0) {
@@ -21,13 +11,23 @@ async function main() {
   }
 
   const projectRoot = path.resolve(__dirname, "..");
-  const fixtureFilename = readdirSync(projectRoot).find(
+  const candidates = readdirSync(projectRoot).filter(
     (f) => (f.endsWith(".xls") || f.endsWith(".xlsx")) && !f.startsWith("~$")
   );
-  if (!fixtureFilename) {
+  if (candidates.length === 0) {
     console.error("No .xls/.xlsx fixture found in the project root to seed with.");
     process.exit(1);
   }
+  if (candidates.length > 1) {
+    console.error(
+      `Found ${candidates.length} .xls/.xlsx files in the project root - ambiguous which one to ` +
+        `seed with: ${candidates.join(", ")}. Directory listing order is not guaranteed, so this ` +
+        `is never resolved silently. Keep only the one export you want seeded in the project root ` +
+        `(move or remove the others) and re-run.`
+    );
+    process.exit(1);
+  }
+  const fixtureFilename = candidates[0];
 
   console.log(`Seeding from ${fixtureFilename} ...`);
   const buffer = readFileSync(path.join(projectRoot, fixtureFilename));

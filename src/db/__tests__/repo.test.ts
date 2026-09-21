@@ -1,17 +1,10 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "crypto";
 
-/**
- * Integration tests against a real Postgres database, covering the parts
- * of the assignment that a pure unit test cannot: persistence surviving a
- * fresh read, editing, duplication, and independence of the copy from the
- * original.
- *
- * These require DATABASE_URL (see README "Local setup"). They are skipped
- * automatically - not failed - when it is not set, so the deterministic
- * parser tests (`npm test`) always run standalone. Run these specifically
- * with `npm run test:db`.
- */
+// Integration tests against a real Postgres database: persistence surviving
+// a fresh read, editing, duplication, and independence of the copy.
+// Requires DATABASE_URL - skipped automatically when it's not set, so
+// `npm test` always runs standalone. Run these with `npm run test:db`.
 describe.skipIf(!process.env.DATABASE_URL)("repo (integration)", () => {
   let templateId: string;
   let copyId: string;
@@ -65,8 +58,7 @@ describe.skipIf(!process.env.DATABASE_URL)("repo (integration)", () => {
     });
     templateId = result.templateId;
 
-    // Fresh read - a completely separate query, not just returning what we
-    // just inserted - proves this is real persistence, not an in-memory echo.
+    // Fresh, separate query - not just the just-inserted objects.
     const detail = await getTemplateDetail(templateId);
     expect(detail?.sections).toHaveLength(1);
     expect(detail?.sections[0].items[0].comments[0].name).toBe("Material");
@@ -142,8 +134,7 @@ describe.skipIf(!process.env.DATABASE_URL)("repo (integration)", () => {
             {
               name: "Item",
               position: 0,
-              // deliberately malformed (name: null violates the NOT NULL
-              // constraint) to force a DB error mid-transaction
+              // name: null violates NOT NULL, forcing a mid-transaction error
               comments: [{ name: null, position: 0 }],
             },
           ],
@@ -163,11 +154,6 @@ describe.skipIf(!process.env.DATABASE_URL)("repo (integration)", () => {
   });
 
   describe("template deletion", () => {
-    // "Cancel" is a client-side confirmation dialog (DeleteTemplateButton)
-    // that simply never calls the delete Server Action - there is nothing
-    // to assert here at the repo layer beyond "the action was never
-    // invoked," which is exercised by browser testing, not a DB test.
-
     it("deletes an existing template and its sections/items/comments; it is no longer retrievable", async () => {
       const { commitImport, deleteTemplate, getTemplateDetail } = await import("../repo");
       const { db } = await import("../client");

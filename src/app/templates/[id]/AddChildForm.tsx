@@ -3,15 +3,8 @@
 import { useRef, useState, useTransition } from "react";
 import { AlertIcon, PlusIcon, SpinnerIcon } from "@/app/_components/icons";
 
-/**
- * One reusable "add a child row" control, used at all three levels the
- * importer itself builds - section, item, and comment (there is no
- * separate "subsection" anywhere in this data model; see NOTES.md,
- * "Editor extension: Add section / item / comment"). Each level just
- * supplies its own label text and an `onCreate` call bound to the right
- * Server Action, the same pattern EditableField already uses for renaming
- * at all three levels via its `onSave` prop.
- */
+// One reusable "add a child row" control, used at all three levels the
+// importer builds - section, item, and comment.
 export function AddChildForm({
   buttonLabel,
   fieldLabel,

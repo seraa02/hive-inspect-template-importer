@@ -6,17 +6,8 @@ import { useEditorStatus } from "./EditorStatusContext";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-/**
- * A single-line editable name (section name, item name, comment name).
- * Saves on blur or Enter; shows a lightweight status so the user always
- * knows whether their change actually persisted, per the assignment's
- * requirement for clear save/success/error states (no silent failures).
- *
- * `fieldId`, when provided, reports this field's dirty/saving/error state
- * up to the page-level EditorStatusProvider so the editor's status bar can
- * show one aggregate answer - purely a UI aggregation, the actual save
- * still happens right here, unchanged.
- */
+// A single-line editable name that saves on blur or Enter. `fieldId`, when
+// provided, reports save state up to the page-level status bar.
 export function EditableField({
   initialValue,
   onSave,

@@ -215,10 +215,10 @@ sheet "Sheet1")
   separate comments and emits a warning rather than merging or dropping
   either - this is exercised by an automated test.
 - `Comment Type` is `info` (78), `limit` (12), or `defect` (302) - this maps
-  conceptually onto the Information / Limitations / Defects & Deficiencies
-  categories observed in Hive's own template editor, though the importer
-  does not force values into that exact vocabulary (another export could use
-  different comment types).
+  conceptually onto the Information / Limitations / Defects/ Deficiencies
+  categories confirmed directly in Hive's own template editor (see "Hive
+  product feedback" below), though the importer does not force values into
+  that exact vocabulary (another export could use different comment types).
 - `Section Name` / `Item Name` contain literal HTML entities as plain text
   (e.g. the string `"Crawlspace &amp; Structure"`, not an actual `&`) in 107
   and 158 rows respectively - these are HTML-decoded on import so they
@@ -253,6 +253,18 @@ in the editor), with the current importer:
 - This export is *not* committed to the repo (only the InterNACHI export
   the assignment asks for is) - the numbers above come from actually
   running it, not from memory or estimation.
+- Running this test left the ASHI file sitting, untracked, in the project
+  root - which exposed a real fragility: `scripts/seed.ts` originally picked
+  "the first `.xls`/`.xlsx` file in the project root" by directory-listing
+  order, which is not alphabetical or otherwise guaranteed (confirmed
+  directly: `readdirSync` returned ASHI before InterNACHI on this machine).
+  With two candidate files present, a fresh `npm run seed` would have
+  silently seeded the wrong template. Fixed by making the script refuse and
+  name all candidates when more than one is found, rather than guessing -
+  consistent with this project's existing rule of never resolving ambiguity
+  silently (see the importer's own warnings). No filename is hardcoded
+  either before or after this fix; the fix is about failing loudly on
+  ambiguity, not about picking a specific file.
 
 ## Photo/image preservation
 
@@ -293,14 +305,17 @@ specific row actually had content in it.
   `javascript:`), one `<strong>`, and one `<div>`.
 - What we preserve: `<p>`, `<a href>` (http/https/mailto only), `<strong>`,
   `<b>`, `<em>`, `<i>`, `<ul>`, `<ol>`, `<li>`, `<br>`, `<div>`. The
-  sanitizer's `transformTags` is written to add `rel="noopener noreferrer"
-  target="_blank"` to preserved links; final QA found this attribute
-  addition is not actually taking effect with the installed `sanitize-html`
-  version (links render and are fully clickable, just without those two
-  attributes) - noted here rather than left silently wrong. Not a security
-  issue (the scheme allowlist below still runs and still rejects unsafe
-  schemes), just a missing usability nicety. Left unfixed in this pass -
-  out of scope for the specific fixes this delivery round covered.
+  sanitizer's `transformTags` adds `rel="noopener noreferrer"
+  target="_blank"` to preserved links. An earlier pass found this attribute
+  addition wasn't taking effect - `sanitize-html` applies `allowedAttributes`
+  filtering *after* `transformTags` runs, so `rel`/`target` were being
+  stripped right back out because `allowedAttributes.a` only listed `href`.
+  Root-caused and fixed in this pass by adding `rel`/`target` to
+  `allowedAttributes.a` (`src/lib/importer/sanitizeComment.ts`) - confirmed
+  directly (`sanitizeHtml` called standalone with and without the fix) rather
+  than assumed. Not a security issue either way (the scheme allowlist below
+  runs independently and still rejects unsafe schemes) - this was a
+  usability gap, now closed.
 - What we normalize: `<a href>` whose scheme is not http/https/mailto (e.g.
   `javascript:`) is downgraded to a plain `<span>` and reported as a
   warning; any other disallowed tag or attribute (e.g. `<script>`, `<img>`,
@@ -764,9 +779,11 @@ assumptions that would need to be undone.
    editing - see "Editing and the Save workflow" for why the existing
    per-field autosave model was extended with a status bar instead of
    replaced with something heavier.
-7. Fix `rel`/`target` not actually being added to preserved comment links
-   (see "Formatting, links, and rich content" above) - found during final
-   QA, not a security issue, left as-is.
+7. ~~Fix `rel`/`target` not actually being added to preserved comment
+   links~~ - **resolved in a later pass**: root-caused (`allowedAttributes`
+   filtering runs after `transformTags`, stripping the two attributes back
+   out) and fixed by adding them to `allowedAttributes.a` - see "Formatting,
+   links, and rich content."
 8. **A from-scratch "New Template" creator.** Evaluated and rejected - see
    "Editor extension: Add section / Add item / Add comment" for why it's a
    separate product surface (authoring) rather than an extension of the
@@ -839,11 +856,37 @@ which ones are unrelated speculation:
   fetching, per the point above) would eventually want to move off the
   request/response cycle.
 
-Deliberately not listed: things like role/permission systems, batch
-imports of many files at once, or template comparison/diff tooling - none
-of these follow directly from what this project actually does today, and
-listing them would be speculation rather than a real extension of the
-current design.
+A few more, added on reflection - each a direct extension of what already
+exists, not a new product surface:
+
+- **Template diff / comparison view.** The data model already supports it
+  (two `templates` rows, same shape) - a side-by-side or unified diff
+  between a template and its duplicate (or between two versions once
+  version history exists) would give the customer direct, visual proof that
+  "nothing changed except what I meant to change," which is the exact
+  anxiety this whole project is about addressing.
+- **In-editor search/filter.** At 12+ sections and 300-400+ comments,
+  finding one specific item or comment today means expanding accordions by
+  hand. A client-side filter over the already-loaded tree (no schema or
+  server change) would matter the moment a real inspector's template is
+  this large.
+- **Bulk find-and-replace across a template.** Item names repeat by design
+  across sections (e.g. "General" in 8 sections in the committed fixture);
+  renaming a recurring item consistently today means editing it once per
+  section by hand.
+- **Multi-file import.** An inspection company migrating from Spectora
+  likely has more than one template (residential, commercial, etc.);
+  importing them one at a time today is a real limitation for that
+  customer, not just a nice-to-have.
+- **Export back out** (to a spreadsheet, or Hive's own format once that's
+  documented) - so adopting this importer doesn't trade one lock-in for
+  another, and so round-trip fidelity could be verified automatically
+  instead of only by manual inspection.
+
+Deliberately not listed: things like role/permission systems or a
+general-purpose workflow/rules engine - these don't follow directly from
+what this project actually does today, and listing them would be
+speculation rather than a real extension of the current design.
 
 ## Customer-focused improvement (the one we chose)
 
@@ -976,16 +1019,26 @@ about repeatedly, each pointing to the section with the full explanation.
 
 ## Hive product feedback
 
-Based on the exploration notes provided for this assignment: Hive's own
-template hierarchy (Section -> Subsection -> Category -> Fields, with
-Information / Limitations / Defects-Deficiencies as the category names)
-maps cleanly onto the shape Spectora's export already uses (`Comment Type:
-info/limit/defect`). That's a good sign for a Spectora migration path, but
-it also suggests the template-import workflow could offer that mapping
-explicitly during import - i.e. surface "This Spectora comment type will
-appear under your Defects/Deficiencies category" as part of the import
-preview, rather than leaving the customer to discover the correspondence
-themselves after the import completes.
+Verified directly against a live Hive Inspect trial account (Templates ->
+a real template, expanding a section/subsection), not assumed: Hive's own
+template hierarchy is Section -> Subsection -> Fields, with fields grouped
+into three color-coded categories within each subsection - **Information**
+(green), **Limitations** (yellow), and **Defects/ Deficiencies**
+(orange/red, exact on-screen label, not "Defects-Deficiencies" as an
+earlier draft of this note assumed). There is no separately-named
+"Category" tier in Hive's own hierarchy counter (which literally counts
+Sections / Subsections / Fields) - category is a grouping/coloring within a
+subsection, not its own level.
+
+That maps cleanly onto the shape Spectora's export already uses
+(`Comment Type: info/limit/defect`). That's a good sign for a Spectora
+migration path, but it also suggests the template-import workflow could
+offer that mapping explicitly during import - i.e. surface "This Spectora
+comment type will appear under your Defects/ Deficiencies category" as part
+of the import preview, rather than leaving the customer to discover the
+correspondence themselves after the import completes. (Not verified: how
+Hive's own template-import/upload flow currently handles this - only the
+template editor's hierarchy and category names were checked directly.)
 
 ## Binsr comparison
 

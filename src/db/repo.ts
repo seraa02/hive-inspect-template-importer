@@ -5,14 +5,8 @@ import { comments, imports, items, sections, templates, type ImportWarning } fro
 import type { ParsedTemplate } from "@/lib/importer/types";
 import { sanitizeComment } from "@/lib/importer/sanitizeComment";
 
-/**
- * Persists a fully-parsed template (sections/items/comments already
- * validated and normalized by the importer) inside a single database
- * transaction, along with an `imports` record capturing the warnings and
- * counts produced during parsing. If anything fails partway through, the
- * whole transaction rolls back - the database is never left with a
- * half-imported template.
- */
+// Persists a parsed template in one transaction, alongside an `imports`
+// record of its warnings/counts. Rolls back entirely on failure.
 export async function commitImport(params: {
   templateName: string;
   filename: string;
@@ -85,7 +79,6 @@ export async function commitImport(params: {
   });
 }
 
-/** Records a failed import attempt (no template rows are created). */
 export async function recordFailedImport(params: { filename: string; errorMessage: string }) {
   const importId = randomUUID();
   await db.insert(imports).values({
@@ -133,17 +126,8 @@ export async function getImportForTemplate(templateId: string) {
   });
 }
 
-/**
- * Appends a new, empty section to an existing template. Position is the
- * current section count for that template, matching the append-in-order
- * convention already used by the importer (mapRowsToTemplate assigns
- * `position: sections.length` the same way) - sections are never deleted
- * or reordered individually, so this stays contiguous and correct.
- * Duplication and independent-copy behavior need no special handling:
- * duplicateTemplate() already iterates over whatever sections a template
- * has, so a manually-added section is copied and made independent exactly
- * like every imported one.
- */
+// Appends a new section at the current section count, matching the
+// importer's own append-in-order convention.
 export async function createSection(templateId: string, name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Section name cannot be empty.");
@@ -163,16 +147,6 @@ export async function createSection(templateId: string, name: string) {
   return { id };
 }
 
-/**
- * Appends a new, empty item to an existing section - the same
- * append-in-order convention as createSection() and the importer itself
- * (mapRowsToTemplate assigns `position: section.items.length`). An item
- * created this way starts with zero comments, exactly like a section
- * created this way starts with zero items: it's a container, not a leaf,
- * so there is nothing else to default. Duplication needs no special
- * handling for the same reason createSection() doesn't: duplicateTemplate()
- * iterates over whatever items a section has.
- */
 export async function createItem(sectionId: string, name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Item name cannot be empty.");
@@ -192,19 +166,9 @@ export async function createItem(sectionId: string, name: string) {
   return { id };
 }
 
-/**
- * Appends a new comment to an existing item - the leaf level, so unlike
- * createSection()/createItem() this does have sibling fields to consider
- * (commentType, severity, answerType, multipleChoiceOptions,
- * unitTypeOptions, recommendation, defaultValue, sourceMetadata). All of
- * them are nullable columns (see schema.ts) and every one of them is
- * already null on plenty of real imported comments (e.g. a comment with no
- * severity or answer type is a normal, valid row today, not an edge case) -
- * so a manually-added comment simply starts with all of them null/empty,
- * exactly like any other field this editor doesn't build type-specific
- * input for. Name and text are then editable the same way as any imported
- * comment, via the existing EditableField/CommentCard components.
- */
+// Sibling fields (commentType, severity, etc.) are all nullable columns and
+// already null on plenty of real imported comments, so a manually-added
+// comment starts with the same shape.
 export async function createComment(itemId: string, name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Comment name cannot be empty.");
@@ -256,18 +220,13 @@ export async function updateCommentFields(
     update.name = trimmed;
   }
   if (fields.textHtml !== undefined) {
-    // Re-sanitize on every save - edits go through the same allowlist as
-    // import, so stored XSS cannot be introduced via the editor either.
+    // Re-sanitize on every edit, not just on import.
     update.textHtml = sanitizeComment(fields.textHtml).clean;
   }
   await db.update(comments).set(update).where(eq(comments.id, commentId));
 }
 
-/**
- * Deep-copies a template (sections -> items -> comments) with entirely new
- * IDs, in one transaction. The result is fully independent: editing the
- * copy touches only the new rows and never the originals.
- */
+// Deep-copies a template with entirely new IDs, in one transaction.
 export async function duplicateTemplate(templateId: string, newName?: string) {
   const original = await getTemplateDetail(templateId);
   if (!original) throw new Error("Template not found.");

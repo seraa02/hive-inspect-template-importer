@@ -32,11 +32,7 @@ export interface PreviewFailure {
   errorMessage: string;
 }
 
-/**
- * Step 1 of the import pipeline exposed to the UI: validate + parse only.
- * Nothing is written to the database yet - the caller shows this preview
- * (counts + warnings) and asks the user to confirm before we commit.
- */
+// Validates and parses only - nothing is written until the user confirms.
 export async function previewImportAction(formData: FormData): Promise<PreviewResult | PreviewFailure> {
   const file = formData.get("file");
   if (!(file instanceof File)) {
@@ -71,12 +67,8 @@ export async function previewImportAction(formData: FormData): Promise<PreviewRe
   }
 }
 
-/**
- * Step 2: re-parse (parsing is deterministic and cheap) and persist inside
- * one transaction. Re-parsing rather than trusting client-supplied JSON
- * means the server never has to trust anything about the file's contents
- * beyond what it validates itself.
- */
+// Re-parses the file server-side rather than trusting client-supplied JSON,
+// then persists inside one transaction.
 export async function commitImportAction(formData: FormData) {
   const file = formData.get("file");
   const templateName = String(formData.get("templateName") ?? "").trim();
@@ -112,28 +104,13 @@ export async function duplicateTemplateAction(templateId: string) {
   redirect(`/templates/${newId}`);
 }
 
-/**
- * Permanent delete, confirmed client-side before this is ever called (see
- * DeleteTemplateButton). deleteTemplate() deletes 0 rows (a safe no-op,
- * not an error) if the template was already gone - e.g. a second tab
- * confirming a delete that already happened - so this is safe to call
- * more than once for the same id. Always redirects to the template list,
- * which is a harmless refresh if already there.
- */
+// Permanent delete. Deleting an already-gone template is a safe no-op.
 export async function deleteTemplateAction(templateId: string) {
   await deleteTemplate(templateId);
   revalidatePath("/");
   redirect("/");
 }
 
-/**
- * Add section / Add item / Add comment mirror exactly the three levels
- * the importer itself builds (template -> sections -> items -> comments -
- * there is no separate "subsection" anywhere in this data model). Each is
- * a thin wrapper: create the row, then revalidate so it shows up in the
- * tree immediately. No reordering, no bulk creation - see NOTES.md
- * ("Editor extension: Add section / item / comment").
- */
 export async function createSectionAction(templateId: string, name: string) {
   await createSection(templateId, name);
   revalidatePath(`/templates/${templateId}`);

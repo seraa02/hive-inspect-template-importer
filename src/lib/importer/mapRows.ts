@@ -27,12 +27,8 @@ function cellToNumber(v: RawCell): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-// Plain-text fields (Section Name / Item Name / Comment Name) come out of
-// the export with literal HTML entities in them (e.g. "Crawlspace &amp;
-// Structure"), unlike Comment Text which is genuine HTML. We decode
-// entities here so the human-readable name displays correctly, and
-// re-encoding is not our concern since these are stored/edited as plain
-// text, never rendered as HTML.
+// Name fields come out of the export with literal HTML entities
+// (e.g. "Crawlspace &amp; Structure") even though they're plain text.
 function decodeName(v: RawCell): string | null {
   const s = cellToString(v);
   return s === null ? null : decode(s);
@@ -54,9 +50,6 @@ export interface ParsedPhoto {
   caption: string | null;
 }
 
-// Same allowed-scheme convention as sanitizeComment's link handling:
-// only http/https survive. javascript:, data:, and anything else is
-// rejected rather than stored.
 const ALLOWED_PHOTO_URL_SCHEMES = ["http:", "https:"];
 
 function sanitizePhotoUrl(v: RawCell): { url: string | null; unsafe: boolean } {
@@ -66,14 +59,8 @@ function sanitizePhotoUrl(v: RawCell): { url: string | null; unsafe: boolean } {
   return isSafe ? { url: s, unsafe: false } : { url: null, unsafe: true };
 }
 
-/**
- * Turns raw header + data rows (as read from the workbook) into a
- * structured, hierarchical template. Pure and deterministic - no I/O, no
- * network, no LLM - so it is fully unit-testable with plain arrays and
- * works the same for any export that follows the same column-header
- * format, regardless of which sections/items/comments it actually
- * contains.
- */
+// Pure and deterministic: turns header + data rows into a structured
+// template with no I/O and no reliance on any one export's specific content.
 export function mapRowsToTemplate(headerRow: RawRow, dataRows: RawRow[]): ParsedTemplate {
   const headerStrings = headerRow.map((h) => (h === null || h === undefined ? "" : String(h)));
   const columns = resolveColumnIndexes(headerStrings);
@@ -214,11 +201,8 @@ export function mapRowsToTemplate(headerRow: RawRow, dataRows: RawRow[]): Parsed
       if (v !== null) sourceMetadata[key] = v;
     }
 
-    // Default Photo 1-10 (+ captions): preserve per-row values rather than
-    // just noting the column exists. An empty photo slot is not meaningful
-    // and is skipped without comment; an unsafe URL scheme (javascript:,
-    // data:, etc.) is rejected and reported, same convention as comment-body
-    // links in sanitizeComment.ts.
+    // An empty photo slot is skipped without comment; an unsafe URL scheme
+    // is rejected and reported rather than stored.
     const photos: ParsedPhoto[] = [];
     for (const slot of PHOTO_SLOTS) {
       const { url, unsafe } = sanitizePhotoUrl(get(row, photoUrlColumnKey(slot)));
@@ -250,11 +234,8 @@ export function mapRowsToTemplate(headerRow: RawRow, dataRows: RawRow[]): Parsed
       unitTypeOptions: splitList(get(row, "unitTypeOptions")),
       recommendation: cellToString(get(row, "recommendation")),
       defaultValue: cellToString(get(row, "defaultValue")),
-      // Source row order is the primary, reliable ordering signal (it is
-      // always present and always monotonic). The export's own "Order (w/i
-      // item)" column is a secondary hint restarting per comment-type group
-      // and occasionally has gaps/duplicates in real data, so we keep it as
-      // metadata rather than trusting it for sort order.
+      // Source row order, not the export's own "Order" column, is the sort
+      // key - that column restarts per group and has gaps in real data.
       position: item.comments.length,
       sourceMetadata: { ...sourceMetadata, orderWithinItem: orderRaw },
       sourceRowNumber: rowNumber,

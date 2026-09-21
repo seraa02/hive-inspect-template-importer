@@ -26,9 +26,7 @@ interface CommentData {
   sourceMetadata?: Record<string, unknown> | null;
 }
 
-// sourceMetadata is an untyped jsonb catch-all at the DB layer (see
-// schema.ts) - this narrows just the one shape this card actually renders,
-// without trusting the rest of it.
+// sourceMetadata is an untyped jsonb catch-all - narrow just the shape used here.
 function importedPhotos(sourceMetadata: Record<string, unknown> | null | undefined): ImportedPhoto[] {
   const raw = sourceMetadata?.photos;
   if (!Array.isArray(raw)) return [];
@@ -38,15 +36,6 @@ function importedPhotos(sourceMetadata: Record<string, unknown> | null | undefin
   );
 }
 
-/**
- * Comment text is edited as its underlying (sanitized) HTML in a textarea,
- * with a live rendered preview beside it - simple, fully lossless for the
- * link/formatting cases the real export contains, and honest about not
- * being a WYSIWYG editor (see NOTES.md / DECISIONS.md for why that tradeoff
- * was made). Everything else on the row (answer type, options, severity,
- * recommendation) is shown read-only: preserved from the source export,
- * visible to build trust, but out of scope for editing in this baseline.
- */
 export function CommentCard({ templateId, comment }: { templateId: string; comment: CommentData }) {
   const [text, setText] = useState(comment.textHtml ?? "");
   const [state, setState] = useState<SaveState>("idle");
@@ -158,13 +147,8 @@ function Badge({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * Visible proof that a Default Photo N value from the export survived the
- * import (see mapRows.ts / schema.ts sourceMetadata.photos) - not a media
- * manager, just a thumbnail-if-it-loads, always-clickable link to the
- * original URL so the content is never hidden even if the image itself
- * can't be fetched (expired CDN link, hotlink protection, CORS, etc).
- */
+// Thumbnail-if-it-loads, always-clickable link to the original URL so the
+// photo is never hidden even if it can't be fetched directly.
 function ImportedPhotoChip({ photo }: { photo: ImportedPhoto }) {
   const [imgFailed, setImgFailed] = useState(false);
 
@@ -195,13 +179,6 @@ function ImportedPhotoChip({ photo }: { photo: ImportedPhoto }) {
   );
 }
 
-/**
- * Purely informational, color-coded by the source export's own comment
- * type - not a control, not clickable, no behavior beyond a badge that
- * exists in InterNACHI/ASHI and presumably other Spectora exports too
- * (info/limit/defect). Any other value it may take in a different export
- * still renders, just in the neutral style.
- */
 function TypeBadge({ type }: { type: string }) {
   const styles: Record<string, string> = {
     info: "bg-blue-50 text-blue-700 border-blue-200",

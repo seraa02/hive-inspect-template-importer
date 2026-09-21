@@ -97,7 +97,11 @@ npm run db:migrate
 Seeds from the committed Spectora export (`InterNACHI Residential
 -2026-09-19.xls`) so the app opens with a real, already-imported template
 instead of an empty state. Safe to re-run - it no-ops if any template
-already exists.
+already exists. It looks for whichever single `.xls`/`.xlsx` file sits in
+the project root rather than hardcoding that filename - so it also works if
+you swap in a different export - but it refuses to guess (and tells you why)
+if it finds more than one, rather than silently picking one by directory
+order.
 
 ```bash
 npm run seed

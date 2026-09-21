@@ -8,31 +8,11 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
-/**
- * Data model
- * ----------
- * templates -> sections -> items -> comments (leaf answer fields)
- *
- * This mirrors the hierarchy actually present in the Spectora HTML-text
- * export (Section Name / Item Name / Comment Name columns), and lines up
- * with how Hive Inspect itself groups template content into named areas.
- *
- * `position` columns store explicit ordering (source row order) rather
- * than relying on primary-key/insertion order, so ordering survives
- * duplication, edits, and re-reads.
- *
- * `sourceMetadata` on comments holds low-signal columns from the export
- * (Locked, Simple Format, Disable Photos, Uses, Default Location, Default
- * Value 2, Default Unit Type, Last Modified) so nothing from the source
- * row is silently discarded, without spending mostly-empty columns on
- * fields the committed fixture never uses.
- *
- * `sourceMetadata.photos` (when present) is an array of
- * `{ slot, url, caption }` built from the export's Default Photo 1-10 (+
- * caption) columns - see src/lib/importer/mapRows.ts. Empty photo slots are
- * omitted rather than stored as empty; URLs are restricted to http/https
- * (see sanitizePhotoUrl in mapRows.ts).
- */
+// templates -> sections -> items -> comments (leaf answer fields).
+// `position` stores explicit ordering so it survives duplication and edits.
+// `sourceMetadata` on comments holds low-signal export columns (Locked,
+// Simple Format, Default Location, photo URLs, etc.) that don't warrant a
+// dedicated column, so nothing from the source row is silently discarded.
 
 export const templates = pgTable("templates", {
   id: uuid("id").primaryKey(),
@@ -72,12 +52,9 @@ export const comments = pgTable("comments", {
     .notNull()
     .references(() => items.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  // Sanitized HTML fragment. Plain text is valid HTML too.
   textHtml: text("text_html"),
-  // Raw values from "Comment Type (info, limit, defect)" - preserved verbatim,
-  // not forced into a fixed enum, since another export may use other values.
+  // Not a fixed enum - preserved verbatim since another export may use different values.
   commentType: text("comment_type"),
-  // Raw value from "Category (-1: Low, 0: Med, 1: High)"
   severity: integer("severity"),
   answerType: text("answer_type"),
   multipleChoiceOptions: jsonb("multiple_choice_options").$type<string[] | null>(),
@@ -90,8 +67,7 @@ export const comments = pgTable("comments", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// One row per import attempt. Keeps warnings/stats visible after the fact,
-// even after the user navigates away and comes back.
+// One row per import attempt, keeping warnings/stats visible after the fact.
 export const imports = pgTable("imports", {
   id: uuid("id").primaryKey(),
   templateId: uuid("template_id").references(() => templates.id, { onDelete: "cascade" }),

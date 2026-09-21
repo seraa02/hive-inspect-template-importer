@@ -4,22 +4,14 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
 
 type FieldStatus = "dirty" | "saving" | "error";
 
-/**
- * Aggregates the save state of every EditableField / comment textarea on
- * the page into one status bar, without changing how or when anything is
- * actually persisted. Each field still saves itself independently via its
- * own Server Action call on blur (see EditableField.tsx / CommentCard.tsx)
- * - this only tracks "does at least one field currently have unsaved
- * input, or a save in flight, or a failed save" so the editor can show one
- * honest, page-level answer instead of the user having to scan 350+
- * individual field indicators themselves.
- */
+// Aggregates the save state of every editable field on the page into one
+// status bar, without changing how or when each field actually persists.
 interface EditorStatusContextValue {
   reportStatus: (fieldId: string, status: FieldStatus | "idle") => void;
   hasUnsavedChanges: boolean;
   isSaving: boolean;
   hasError: boolean;
-  /** Synchronous, ref-backed - safe to poll from outside React's render cycle. */
+  // Synchronous, ref-backed - safe to poll from outside React's render cycle.
   hasPendingWork: () => boolean;
 }
 
@@ -42,11 +34,7 @@ function summarize(statuses: Map<string, FieldStatus>) {
 }
 
 export function EditorStatusProvider({ children }: { children: React.ReactNode }) {
-  // The Map is the source of truth, kept in a ref so `hasPendingWork()` can
-  // read it synchronously from outside React's render cycle (a polling
-  // loop in EditorStatusBar). The three booleans below are ordinary state,
-  // recomputed and set from `reportStatus` (an event-handler callback, not
-  // render) so the render body itself never reads `ref.current`.
+  // Ref-backed so hasPendingWork() can read synchronously outside render.
   const statuses = useRef(new Map<string, FieldStatus>());
   const [summary, setSummary] = useState({ hasUnsavedChanges: false, isSaving: false, hasError: false });
 

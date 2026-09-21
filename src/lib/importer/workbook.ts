@@ -28,11 +28,7 @@ export function validateUpload(filename: string, sizeBytes: number): void {
 function excelValueToCell(value: ExcelJS.CellValue): RawCell {
   if (value === null || value === undefined) return null;
   if (typeof value === "object") {
-    // Rich text, hyperlink, formula-result, or date objects. exceljs
-    // decomposes rich text into `.richText` runs - flatten those back into
-    // plain text (the export's HTML lives in the string value itself, not
-    // in Excel-level rich text runs, but we handle it defensively so a
-    // differently-produced export doesn't lose content silently).
+    // Rich text, hyperlink, formula-result, or date objects.
     if ("richText" in value && Array.isArray((value as { richText: { text: string }[] }).richText)) {
       return (value as { richText: { text: string }[] }).richText.map((r) => r.text).join("");
     }
@@ -49,14 +45,8 @@ export interface WorkbookRows {
   dataRows: RawRow[];
 }
 
-/**
- * Reads the first worksheet of an uploaded workbook into plain arrays.
- * Deliberately dumb: no business logic here, just "give me the grid of
- * cell values." The Spectora export we inspected has one sheet named
- * "Sheet1", but we do not assume that name - we take whichever sheet is
- * first, since a differently-named single-sheet export is still valid
- * input.
- */
+// Reads the first worksheet into plain arrays - no business logic, and no
+// assumption about the sheet's name.
 export async function readWorkbookRows(buffer: Buffer): Promise<WorkbookRows> {
   const workbook = new ExcelJS.Workbook();
   try {
